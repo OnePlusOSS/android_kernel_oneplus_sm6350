@@ -8,7 +8,7 @@
  * much numberspace.
  */
 #define SD_MAJORS	16
-
+extern struct gendisk *ufs_disk[SD_NUM];
 /*
  * Time out in seconds for disks and Magneto-opticals (which are slower).
  */
@@ -118,7 +118,7 @@ struct scsi_disk {
 	unsigned	security : 1;
 	unsigned	ignore_medium_access_errors : 1;
 };
-#define to_scsi_disk(obj) container_of(obj,struct scsi_disk,dev)
+#define to_scsi_disk(obj) container_of(obj, struct scsi_disk, dev)
 
 static inline struct scsi_disk *scsi_disk(struct gendisk *disk)
 {
@@ -126,10 +126,10 @@ static inline struct scsi_disk *scsi_disk(struct gendisk *disk)
 }
 
 #define sd_printk(prefix, sdsk, fmt, a...)				\
-        (sdsk)->disk ?							\
-	      sdev_prefix_printk(prefix, (sdsk)->device,		\
+		((sdsk)->disk ?	\
+		sdev_prefix_printk(prefix, (sdsk)->device,		\
 				 (sdsk)->disk->disk_name, fmt, ##a) :	\
-	      sdev_printk(prefix, (sdsk)->device, fmt, ##a)
+		sdev_printk(prefix, (sdsk)->device, fmt, ##a))
 
 #define sd_first_printk(prefix, sdsk, fmt, a...)			\
 	do {								\

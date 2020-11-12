@@ -62,6 +62,30 @@ enum {
 #define DISK_MAX_PARTS			256
 #define DISK_NAME_LEN			32
 
+/* UFS LUN numbers */
+#define SD_NUM                           6
+/* DDR size  */
+#define WT_GET_DDR_SIZE_ZERO             0
+#define WT_GET_DDR_SIZE_1GB              1
+#define WT_GET_DDR_SIZE_2GB              2
+#define WT_GET_DDR_SIZE_3GB              3
+#define WT_GET_DDR_SIZE_4GB              4
+#define WT_GET_DDR_SIZE_6GB              6
+#define WT_GET_DDR_SIZE_8GB              8
+#define WT_GET_DDR_SIZE_10GB             10
+#define WT_GET_DDR_SIZE_12GB             12
+#define WT_GET_DDR_SIZE_14GB             14
+#define WT_GET_DDR_SIZE_16GB             16
+/* UFS size */
+#define WT_GET_UFS_SIZE_ZERO             0
+#define WT_GET_UFS_SIZE_16GB             16
+#define WT_GET_UFS_SIZE_32GB             32
+#define WT_GET_UFS_SIZE_64GB             64
+#define WT_GET_UFS_SIZE_128GB            128
+#define WT_GET_UFS_SIZE_256GB            256
+#define WT_GET_UFS_SIZE_512GB            512
+#define WT_GET_UFS_SIZE_1TB              1024
+#define WT_GET_UFS_SIZE_2TB              2048
 #include <linux/major.h>
 #include <linux/device.h>
 #include <linux/smp.h>

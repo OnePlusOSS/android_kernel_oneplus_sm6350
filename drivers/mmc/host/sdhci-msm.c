@@ -32,6 +32,7 @@
 #include <linux/pm_runtime.h>
 #include <trace/events/mmc.h>
 
+#include <linux/proc_fs.h>
 #include "sdhci-msm.h"
 #include "sdhci-msm-ice.h"
 #include "sdhci-pltfm.h"
@@ -343,6 +344,7 @@ static const u32 tuning_block_128[] = {
 static struct sdhci_msm_host *sdhci_slot[2];
 
 static int disable_slots;
+static int sdhci_irq_gpio;
 /* root can write, others read */
 module_param(disable_slots, int, 0644);
 
@@ -2219,6 +2221,7 @@ struct sdhci_msm_pltfm_data *sdhci_msm_populate_pdata(struct device *dev,
 		goto out;
 
 	pdata->status_gpio = of_get_named_gpio_flags(np, "cd-gpios", 0, &flags);
+	sdhci_irq_gpio = pdata->status_gpio;
 	if (gpio_is_valid(pdata->status_gpio) && !(flags & OF_GPIO_ACTIVE_LOW))
 		pdata->caps2 |= MMC_CAP2_CD_ACTIVE_HIGH;
 
@@ -5315,6 +5318,47 @@ static int sdhci_msm_get_ice_device_vops(struct sdhci_host *host,
 	return ret;
 }
 
+static int sim_card_status_show(struct seq_file *m, void *v)
+{
+	int gpio_value;
+
+	gpio_value = gpio_get_value_cansleep(sdhci_irq_gpio);
+
+	pr_debug("%s: gpio_value is %d\n", __func__, gpio_value);
+
+	seq_printf(m, "%d\n", gpio_value);
+
+	return 0;
+}
+
+static int sim_card_status_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, sim_card_status_show, NULL);
+}
+
+static const struct file_operations sim_card_status_fops = {
+	.open		= sim_card_status_proc_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+static int sim_card_tray_create_proc(void)
+{
+	struct proc_dir_entry *status_entry;
+
+	status_entry = proc_create("sd_tray_gpio_value", 0, NULL,
+	&sim_card_status_fops);
+	if (!status_entry)
+		return -ENOMEM;
+
+	return 0;
+}
+
+static void sim_card_tray_remove_proc(void)
+{
+	remove_proc_entry("sd_tray_gpio_value", NULL);
+}
 static int sdhci_msm_probe(struct platform_device *pdev)
 {
 	const struct sdhci_msm_offset *msm_host_offset;
@@ -5599,7 +5643,8 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	 * in GIC.
 	 */
 	mb();
-
+	if (!strcmp(mmc_hostname(host->mmc), "mmc0"))
+		sim_card_tray_create_proc();
 	/*
 	 * Following are the deviations from SDHC spec v3.0 -
 	 * 1. Card detection is handled using separate GPIO.
@@ -5947,6 +5992,8 @@ static int sdhci_msm_remove(struct platform_device *pdev)
 		sdhci_msm_bus_unregister(msm_host);
 
 	sdhci_pltfm_free(pdev);
+	if (!strcmp(mmc_hostname(host->mmc), "mmc0"))
+		sim_card_tray_remove_proc();
 
 	return 0;
 }

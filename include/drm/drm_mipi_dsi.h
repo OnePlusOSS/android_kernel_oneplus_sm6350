@@ -115,6 +115,8 @@ struct mipi_dsi_host {
 int mipi_dsi_host_register(struct mipi_dsi_host *host);
 void mipi_dsi_host_unregister(struct mipi_dsi_host *host);
 struct mipi_dsi_host *of_find_mipi_dsi_host_by_node(struct device_node *node);
+int mipi_dsi_dcs_set_display_brightness_samsung(struct mipi_dsi_device *dsi,
+								u16 brightness);
 
 /* DSI mode flags */
 
@@ -328,4 +330,9 @@ void mipi_dsi_driver_unregister(struct mipi_dsi_driver *driver);
 	module_driver(__mipi_dsi_driver, mipi_dsi_driver_register, \
 			mipi_dsi_driver_unregister)
 
+int mipi_dsi_dcs_set_display_cabc(struct mipi_dsi_device *dsi,
+									u32 cabc_mode);
+
+ssize_t mipi_dsi_dcs_read_test(struct mipi_dsi_device *dsi, u8 cmd, void *data,
+			  size_t len);
 #endif /* __DRM_MIPI_DSI__ */

@@ -1,0 +1,68 @@
+Himax touch controller
+
+The Himax controller is connected to host processor via i2c. The controller generates interrupts when the user touches the panel. The host controller is expected to read the touch coordinates over i2c and pass the coordinates to the rest of the system.
+
+Required properties:
+ - compatible		: should be "himax,hxcommon"
+ - reg			: i2c slave address of the device, should be <0x38>; For spi interface, means cs number, always be 0
+ - interrupt-parent	: parent of interrupt
+ - interrupts		: irq gpio, "0x02" stands for that the irq triggered by falling edge.
+ - Himax,irq-gpio	: irq gpio, same as "interrupts" node.
+ - Himax,reset-gpio	: reset gpio
+ - Himax,num-max-touches	: maximum number of touches support
+ - Himax,display-coords 	: display resolution in pixels. A four tuple consisting of minX, minY, maxX and maxY.
+
+Optional properties:
+ - Himax,have-key		: specify if virtual keys are supported
+ - Himax,key-number		: number of keys
+ - Himax,keys		: virtual key codes mapping to the coords
+ - Himax,key-x-coords	: constant x coordinates of keys, depends on the x resolution
+ - Himax,key-y-coords	: constant y coordinates of keys, depends on the y resolution
+
+Example:
+I2C Interface:
+	i2c@f9927000 {
+		Himax@38{
+			compatible = "himax,hxcommon";
+			reg = <0x38>;
+			interrupt-parent = <&msm_gpio>;
+			interrupts = <13 0x02>;
+			Himax,reset-gpio = <&msm_gpio 12 0x01>;
+			Himax,irq-gpio = <&msm_gpio 13 0x02>;
+			Himax,max-touch-number = <10>;
+			Himax,display-coords =  <0 0 1080 1920>;
+
+			pinctrl-names = "pmx_ts_active","pmx_ts_suspend","pmx_ts_release";
+			pinctrl-0 = <&ts_int_active &ts_reset_active>;
+			pinctrl-1 = <&ts_int_suspend &ts_reset_suspend>;
+			pinctrl-2 = <&ts_release>;
+
+			/*
+			Himax,have-key;
+			Himax,key-number = <3>;
+			Himax,keys = <139 102 158>;
+			Himax,key-x-coords = <200 600 800>;
+			Himax,key-y-coords = <2000 2000 2000>;
+			*/
+		};
+	};
+
+SPI Interface:
+	spi@78b9000 {
+		Himax@0 {
+			compatible = "himax,hxcommon";
+			reg = <0x0>;
+			spi-max-frequency = <6000000>;
+			interrupt-parent = <&msm_gpio>;
+			interrupts = <13 0x2>;
+			Himax,reset-gpio = <&msm_gpio 12 0x01>;
+			Himax,irq-gpio = <&msm_gpio 13 0x02>;
+			Himax,max-touch-number = <10>;
+			Himax,display-coords =  <0 0 1080 1920>;
+
+			pinctrl-names = "pmx_ts_active","pmx_ts_suspend","pmx_ts_release";
+			pinctrl-0 = <&ts_int_active &ts_reset_active>;
+			pinctrl-1 = <&ts_int_suspend &ts_reset_suspend>;
+			pinctrl-2 = <&ts_release>;
+		};
+	};

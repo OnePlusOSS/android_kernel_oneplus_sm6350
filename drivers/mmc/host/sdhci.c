@@ -878,7 +878,8 @@ static u8 sdhci_calc_timeout(struct sdhci_host *host, struct mmc_command *cmd,
 	u32 curr_clk = 0; /* In KHz */
 
 	*too_big = true;
-
+	if (!strcmp(mmc_hostname(host->mmc), "mmc0"))
+		return 0x0E;
 	/*
 	 * If the host controller provides us with an incorrect timeout
 	 * value, just skip the check and use 0xE.  The hardware may take

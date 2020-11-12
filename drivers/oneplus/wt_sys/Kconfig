@@ -1,0 +1,17 @@
+config WT_BOOT_REASON
+	tristate "CONFIG_WT_BOOT_REASON"
+	default n
+	help
+	  support for bootreason.Dmesg print
+	  wt_boot_reason to help analyze stability issue.
+
+config PRESS_KEY_TRIGGER_PANIC
+	bool "Enable press hot key trigger the crash"
+	default n
+	help
+	  Press the power button, volume up button
+	  and volume down button to trigger the crash.
+
+config WT_SYSTEM_MONITOR
+	tristate "CONFIG_WT_SYSTEM_MONITOR"
+	default n

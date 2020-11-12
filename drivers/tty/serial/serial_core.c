@@ -1510,6 +1510,18 @@ static void uart_close(struct tty_struct *tty, struct file *filp)
 	pr_debug("uart_close(%d) called\n", tty->index);
 
 	tty_port_close(tty->port, tty, filp);
+
+	if (!state->port.console)
+		return;
+
+	mutex_lock(&state->port.mutex);
+	if (!state->port.tty) {
+		struct uart_port *uport = uart_port_check(state);
+
+		if (uport && uart_console(uport))
+			uport->cons->cflag = tty->termios.c_cflag;
+	}
+	mutex_unlock(&state->port.mutex);
 }
 
 static void uart_tty_port_shutdown(struct tty_port *port)

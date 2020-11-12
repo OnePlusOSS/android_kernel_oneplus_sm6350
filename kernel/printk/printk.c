@@ -41,6 +41,8 @@
 #include <linux/rculist.h>
 #include <linux/poll.h>
 #include <linux/irq_work.h>
+#include <linux/rtc.h>
+#include <linux/time.h>
 #include <linux/ctype.h>
 #include <linux/uio.h>
 #include <linux/sched/clock.h>
@@ -349,6 +351,7 @@ static int console_msg_format = MSG_FORMAT_DEFAULT;
  * with a space character and terminated by a newline. All possible
  * non-prinatable characters are escaped in the "\xff" notation.
  */
+#define TASK_COMM_LEN 16
 
 enum log_flags {
 	LOG_NEWLINE	= 2,	/* text ended with a newline */
@@ -364,6 +367,8 @@ struct printk_log {
 	u8 facility;		/* syslog facility */
 	u8 flags:5;		/* internal record flags */
 	u8 level:3;		/* syslog level */
+	pid_t pid;
+	char comm[TASK_COMM_LEN];
 }
 #ifdef CONFIG_HAVE_EFFICIENT_UNALIGNED_ACCESS
 __packed __aligned(4)
@@ -626,6 +631,9 @@ static int log_store(int facility, int level,
 	msg->facility = facility;
 	msg->level = level & 7;
 	msg->flags = flags & 0x1f;
+	msg->pid = current->pid;
+	memset(msg->comm, 0, TASK_COMM_LEN);
+	memcpy(msg->comm, current->comm, TASK_COMM_LEN-1);
 	if (ts_nsec > 0)
 		msg->ts_nsec = ts_nsec;
 	else
@@ -695,10 +703,9 @@ static ssize_t msg_print_ext_header(char *buf, size_t size,
 	u64 ts_usec = msg->ts_nsec;
 
 	do_div(ts_usec, 1000);
-
-	return scnprintf(buf, size, "%u,%llu,%llu,%c;",
-		       (msg->facility << 3) | msg->level, seq, ts_usec,
-		       msg->flags & LOG_CONT ? 'c' : '-');
+	return scnprintf(buf, size, "%u,%llu,%llu,%c;[%d, %s]",
+		(msg->facility << 3) | msg->level, seq, ts_usec,
+		msg->flags & LOG_CONT ? 'c' : '-', msg->pid, msg->comm);
 }
 
 static ssize_t msg_print_ext_body(char *buf, size_t size,
@@ -775,11 +782,13 @@ static ssize_t devkmsg_write(struct kiocb *iocb, struct iov_iter *from)
 	if (devkmsg_log & DEVKMSG_LOG_MASK_OFF)
 		return len;
 
+#ifdef WT_FINAL_RELEASE
 	/* Ratelimit when not explicitly enabled. */
 	if (!(devkmsg_log & DEVKMSG_LOG_MASK_ON)) {
 		if (!___ratelimit(&user->rs, current->comm))
 			return ret;
 	}
+#endif
 
 	buf = kmalloc(len+1, GFP_KERNEL);
 	if (buf == NULL)
@@ -1094,6 +1103,14 @@ static void __init log_buf_add_cpu(void)
 static inline void log_buf_add_cpu(void) {}
 #endif /* CONFIG_SMP */
 
+static int __init ftm_console_silent_setup(char *str)
+{
+	pr_info("ftm_silent_log\n");
+	console_silent();
+	return 0;
+}
+early_param("ftm_console_silent", ftm_console_silent_setup);
+
 void __init setup_log_buf(int early)
 {
 	unsigned long flags;
@@ -1214,20 +1231,19 @@ static inline void boot_delay_msec(int level)
 static bool printk_time = IS_ENABLED(CONFIG_PRINTK_TIME);
 module_param_named(time, printk_time, bool, S_IRUGO | S_IWUSR);
 
-static size_t print_time(u64 ts, char *buf)
+static bool print_wall_time = 1;
+module_param_named(print_wall_time, print_wall_time, bool, 0644);
+
+static bool printk_task_info = 1;
+module_param_named(task_info, printk_task_info, bool, 0644);
+
+static size_t print_task_info(pid_t pid, const char *task_name, char *buf)
 {
-	unsigned long rem_nsec;
-
-	if (!printk_time)
+	if (!printk_task_info)
 		return 0;
-
-	rem_nsec = do_div(ts, 1000000000);
-
 	if (!buf)
-		return snprintf(NULL, 0, "[%5lu.000000] ", (unsigned long)ts);
-
-	return sprintf(buf, "[%5lu.%06lu] ",
-		       (unsigned long)ts, rem_nsec / 1000);
+		return snprintf(NULL, 0, "[%d, %s]", pid, task_name);
+	return snprintf(buf, 32, "[%d, %s]", pid, task_name);
 }
 
 static size_t print_prefix(const struct printk_log *msg, bool syslog, char *buf)
@@ -1248,8 +1264,7 @@ static size_t print_prefix(const struct printk_log *msg, bool syslog, char *buf)
 				len++;
 		}
 	}
-
-	len += print_time(msg->ts_nsec, buf ? buf + len : NULL);
+	len += print_task_info(msg->pid, msg->comm, buf ? buf + len : NULL);
 	return len;
 }
 
@@ -1844,6 +1859,12 @@ int vprintk_store(int facility, int level,
 	char *text = textbuf;
 	size_t text_len;
 	enum log_flags lflags = 0;
+	static char texttmp[LOG_LINE_MAX];
+	static bool last_new_line = true;
+	u64 ts_sec = local_clock();
+	unsigned long rem_nsec;
+
+	rem_nsec = do_div(ts_sec, 1000000000);
 
 	/*
 	 * The printf needs to come first; we need the syslog
@@ -1878,6 +1899,42 @@ int vprintk_store(int facility, int level,
 			text += 2;
 		}
 	}
+	if (last_new_line) {
+		if (print_wall_time && ts_sec >= 20) {
+			struct timespec64 tspec;
+			struct rtc_time tm;
+
+			__getnstimeofday64(&tspec);
+
+			if (sys_tz.tz_minuteswest < 0
+				|| (tspec.tv_sec-sys_tz.tz_minuteswest*60) >= 0)
+				tspec.tv_sec -= sys_tz.tz_minuteswest * 60;
+			rtc_time_to_tm(tspec.tv_sec, &tm);
+
+			text_len = scnprintf(texttmp, sizeof(texttmp),
+				"[%02d%02d%02d_%02d:%02d:%02d.%06ld]@%d %s",
+				tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+				tm.tm_hour, tm.tm_min, tm.tm_sec,
+				tspec.tv_nsec / 1000, raw_smp_processor_id(), text);
+		} else {
+			text_len = scnprintf(texttmp, sizeof(texttmp),
+				"[%5lu.%06lu]@%d %s", (unsigned long)ts_sec,
+				rem_nsec / 1000, raw_smp_processor_id(), text);
+		}
+
+		text = texttmp;
+
+		/* mark and strip a trailing newline */
+		if (text_len && text[text_len-1] == '\n') {
+			text_len--;
+			lflags |= LOG_NEWLINE;
+		}
+	}
+
+	if (lflags & LOG_NEWLINE)
+		last_new_line = true;
+	else
+		last_new_line = false;
 
 	if (level == LOGLEVEL_DEFAULT)
 		level = default_message_loglevel;
@@ -2102,7 +2159,7 @@ __setup("console_msg_format=", console_msg_format_setup);
  * Set up a console.  Called via do_early_param() in init/main.c
  * for each "console=" parameter in the boot command line.
  */
-static int __init console_setup(char *str)
+static int console_setup(char *str)
 {
 	char buf[sizeof(console_cmdline[0].name) + 4]; /* 4 for "ttyS" */
 	char *s, *options, *brl_options = NULL;
@@ -2141,6 +2198,14 @@ static int __init console_setup(char *str)
 	return 1;
 }
 __setup("console=", console_setup);
+
+int  force_oem_console_setup(char *str)
+{
+	console_setup(str);
+	return 1;
+}
+EXPORT_SYMBOL(force_oem_console_setup);
+
 
 /**
  * add_preferred_console - add a device to the list of preferred consoles.

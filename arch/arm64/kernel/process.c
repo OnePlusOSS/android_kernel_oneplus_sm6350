@@ -58,6 +58,7 @@
 #include <asm/mmu_context.h>
 #include <asm/processor.h>
 #include <asm/stacktrace.h>
+#include <wt_sys/wt_boot_reason.h>
 
 #ifdef CONFIG_STACKPROTECTOR
 #include <linux/stackprotector.h>
@@ -298,6 +299,8 @@ void __show_regs(struct pt_regs *regs)
 	}
 
 	printk("sp : %016llx\n", sp);
+
+	wt_brlog_save_pc_lr_value(regs->pc, lr);
 
 	i = top_reg;
 

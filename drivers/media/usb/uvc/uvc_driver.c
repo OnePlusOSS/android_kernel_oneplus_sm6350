@@ -1458,16 +1458,14 @@ static int uvc_scan_chain_forward(struct uvc_video_chain *chain,
 		if (forward == prev)
 			continue;
 		if (forward->chain.next || forward->chain.prev) {
-			uvc_trace(UVC_TRACE_DESCR, "Found reference to "
-				"entity %d already in chain.\n", forward->id);
+			uvc_trace(UVC_TRACE_DESCR, "Found reference to entity %d already in chain.\n", forward->id);
 			return -EINVAL;
 		}
 
 		switch (UVC_ENTITY_TYPE(forward)) {
 		case UVC_VC_EXTENSION_UNIT:
 			if (forward->bNrInPins != 1) {
-				uvc_trace(UVC_TRACE_DESCR, "Extension unit %d "
-					  "has more than 1 input pin.\n",
+				uvc_trace(UVC_TRACE_DESCR, "Extension unit %d has more than 1 input pin.\n",
 					  entity->id);
 				return -EINVAL;
 			}
@@ -1542,10 +1540,8 @@ static int uvc_scan_chain_backward(struct uvc_video_chain *chain,
 					"input terminal\n", entity->id, i);
 				return -1;
 			}
-
 			if (term->chain.next || term->chain.prev) {
-				uvc_trace(UVC_TRACE_DESCR, "Found reference to "
-					"entity %d already in chain.\n",
+				uvc_trace(UVC_TRACE_DESCR, "Found reference to entity %d already in chain.\n",
 					term->id);
 				return -EINVAL;
 			}

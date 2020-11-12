@@ -3,7 +3,7 @@
 #define __QRTR_H_
 
 #include <linux/types.h>
-
+extern int qrtr_first_msg;
 struct sk_buff;
 
 /* endpoint node id auto assignment */

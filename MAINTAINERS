@@ -16267,3 +16267,8 @@ T:	git git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git
 S:	Buried alive in reporters
 F:	*
 F:	*/
+
+HIMAX TOUCHSCREEN DRIVER
+M:	SUBIN <subin@oneplus.com>
+S:	Maintained
+F:	drivers/input/touchscreen/hxchipset/

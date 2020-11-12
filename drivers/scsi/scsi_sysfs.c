@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * scsi_sysfs.c
  *
@@ -25,6 +26,7 @@
 #include "scsi_priv.h"
 #include "scsi_logging.h"
 
+struct gendisk *ufs_disk[SD_NUM];
 static struct device_type scsi_dev_type;
 
 static const struct {
@@ -113,16 +115,20 @@ static const char *scsi_access_state_name(unsigned char state)
 
 static int check_set(unsigned long long *val, char *src)
 {
-	char *last;
+	//char *last;
+	int ret;
 
 	if (strcmp(src, "-") == 0) {
 		*val = SCAN_WILD_CARD;
 	} else {
 		/*
 		 * Doesn't check for int overflow
+		 *
+		 * *val = simple_strtoull(src, &last, 0);
 		 */
-		*val = simple_strtoull(src, &last, 0);
-		if (*last != '\0')
+		ret = kstrtoull(src, 0, val);
+		//if (*last != '\0')
+		if (ret < 0)
 			return 1;
 	}
 	return 0;
@@ -157,20 +163,20 @@ static int scsi_scan(struct Scsi_Host *shost, const char *str)
  */
 #define shost_show_function(name, field, format_string)			\
 static ssize_t								\
-show_##name (struct device *dev, struct device_attribute *attr, 	\
+show_##name(struct device *dev, struct device_attribute *attr,\
 	     char *buf)							\
 {									\
 	struct Scsi_Host *shost = class_to_shost(dev);			\
-	return snprintf (buf, 20, format_string, shost->field);		\
+	return snprintf(buf, 20, format_string, shost->field);		\
 }
 
 /*
  * shost_rd_attr: macro to create a function and attribute variable for a
  * read only field.
  */
-#define shost_rd_attr2(name, field, format_string)			\
+#define shost_rd_attr2(name, field, format_string)		\
 	shost_show_function(name, field, format_string)			\
-static DEVICE_ATTR(name, S_IRUGO, show_##name, NULL);
+static DEVICE_ATTR(name, 0444, show_##name, NULL);
 
 #define shost_rd_attr(field, format_string) \
 shost_rd_attr2(field, field, format_string)
@@ -180,7 +186,7 @@ shost_rd_attr2(field, field, format_string)
  */
 
 static ssize_t
-store_scan(struct device *dev, struct device_attribute *attr,
+scan_store(struct device *dev, struct device_attribute *attr,
 	   const char *buf, size_t count)
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
@@ -191,7 +197,7 @@ store_scan(struct device *dev, struct device_attribute *attr,
 		res = count;
 	return res;
 };
-static DEVICE_ATTR(scan, S_IWUSR, NULL, store_scan);
+static DEVICE_ATTR_WO(scan);
 
 static ssize_t
 store_shost_state(struct device *dev, struct device_attribute *attr,
@@ -203,6 +209,7 @@ store_shost_state(struct device *dev, struct device_attribute *attr,
 
 	for (i = 0; i < ARRAY_SIZE(shost_states); i++) {
 		const int len = strlen(shost_states[i].name);
+
 		if (strncmp(shost_states[i].name, buf, len) == 0 &&
 		   buf[len] == '\n') {
 			state = shost_states[i].value;
@@ -231,26 +238,27 @@ show_shost_state(struct device *dev, struct device_attribute *attr, char *buf)
 
 /* DEVICE_ATTR(state) clashes with dev_attr_state for sdev */
 static struct device_attribute dev_attr_hstate =
-	__ATTR(state, S_IRUGO | S_IWUSR, show_shost_state, store_shost_state);
+	__ATTR(state, 0644, show_shost_state, store_shost_state);
 
 static ssize_t
-show_shost_mode(unsigned int mode, char *buf)
+shost_mode_show(unsigned int mode, char *buf)
 {
 	ssize_t len = 0;
 
 	if (mode & MODE_INITIATOR)
-		len = sprintf(buf, "%s", "Initiator");
+		len = snprintf(buf, 20, "%s", "Initiator");
 
 	if (mode & MODE_TARGET)
-		len += sprintf(buf + len, "%s%s", len ? ", " : "", "Target");
+		len += snprintf(buf + len, PAGE_SIZE - len, "%s%s",
+						len ? ", " : "", "Target");
 
-	len += sprintf(buf + len, "\n");
+	len += snprintf(buf + len, PAGE_SIZE - len, "\n");
 
 	return len;
 }
 
 static ssize_t
-show_shost_supported_mode(struct device *dev, struct device_attribute *attr,
+supported_mode_show(struct device *dev, struct device_attribute *attr,
 			  char *buf)
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
@@ -260,13 +268,13 @@ show_shost_supported_mode(struct device *dev, struct device_attribute *attr,
 		/* by default this should be initiator */
 		supported_mode = MODE_INITIATOR;
 
-	return show_shost_mode(supported_mode, buf);
+	return shost_mode_show(supported_mode, buf);
 }
 
-static DEVICE_ATTR(supported_mode, S_IRUGO | S_IWUSR, show_shost_supported_mode, NULL);
+static DEVICE_ATTR_RO(supported_mode);
 
 static ssize_t
-show_shost_active_mode(struct device *dev,
+active_mode_show(struct device *dev,
 		       struct device_attribute *attr, char *buf)
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
@@ -274,10 +282,10 @@ show_shost_active_mode(struct device *dev,
 	if (shost->active_mode == MODE_UNKNOWN)
 		return snprintf(buf, 20, "unknown\n");
 	else
-		return show_shost_mode(shost->active_mode, buf);
+		return shost_mode_show(shost->active_mode, buf);
 }
 
-static DEVICE_ATTR(active_mode, S_IRUGO | S_IWUSR, show_shost_active_mode, NULL);
+static DEVICE_ATTR_RO(active_mode);
 
 static int check_reset_type(const char *str)
 {
@@ -290,7 +298,7 @@ static int check_reset_type(const char *str)
 }
 
 static ssize_t
-store_host_reset(struct device *dev, struct device_attribute *attr,
+host_reset_store(struct device *dev, struct device_attribute *attr,
 		const char *buf, size_t count)
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
@@ -313,21 +321,21 @@ exit_store_host_reset:
 	return ret;
 }
 
-static DEVICE_ATTR(host_reset, S_IWUSR, NULL, store_host_reset);
+static DEVICE_ATTR_WO(host_reset);
 
 static ssize_t
-show_shost_eh_deadline(struct device *dev,
+eh_deadline_show(struct device *dev,
 		      struct device_attribute *attr, char *buf)
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
 
 	if (shost->eh_deadline == -1)
 		return snprintf(buf, strlen("off") + 2, "off\n");
-	return sprintf(buf, "%u\n", shost->eh_deadline / HZ);
+	return snprintf(buf, sizeof(buf), "%u\n", shost->eh_deadline / HZ);
 }
 
 static ssize_t
-store_shost_eh_deadline(struct device *dev, struct device_attribute *attr,
+eh_deadline_store(struct device *dev, struct device_attribute *attr,
 		const char *buf, size_t count)
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
@@ -335,8 +343,8 @@ store_shost_eh_deadline(struct device *dev, struct device_attribute *attr,
 	unsigned long deadline, flags;
 
 	if (shost->transportt &&
-	    (shost->transportt->eh_strategy_handler ||
-	     !shost->hostt->eh_host_reset_handler))
+		(shost->transportt->eh_strategy_handler ||
+		!shost->hostt->eh_host_reset_handler))
 		return ret;
 
 	if (!strncmp(buf, "off", strlen("off")))
@@ -365,7 +373,7 @@ store_shost_eh_deadline(struct device *dev, struct device_attribute *attr,
 	return ret;
 }
 
-static DEVICE_ATTR(eh_deadline, S_IRUGO | S_IWUSR, show_shost_eh_deadline, store_shost_eh_deadline);
+static DEVICE_ATTR_RW(eh_deadline);
 
 shost_rd_attr(use_blk_mq, "%d\n");
 shost_rd_attr(unique_id, "%u\n");
@@ -378,13 +386,99 @@ shost_rd_attr(prot_capabilities, "%u\n");
 shost_rd_attr(prot_guard_type, "%hd\n");
 shost_rd_attr2(proc_name, hostt->proc_name, "%s\n");
 
+static int calc_ddr_size(void)
+{
+		int temp_size;
+	/* One page => 4K */
+		temp_size = (int)totalram_pages/1024;
+
+		if ((temp_size > 0*256) && (temp_size <= 1*256))
+			return WT_GET_DDR_SIZE_1GB;
+		else if ((temp_size > 1*256) && (temp_size <= 2*256))
+			return WT_GET_DDR_SIZE_2GB;
+		else if ((temp_size > 2*256) && (temp_size <= 3*256))
+			return WT_GET_DDR_SIZE_3GB;
+		else if ((temp_size > 3*256) && (temp_size <= 4*256))
+			return WT_GET_DDR_SIZE_4GB;
+		else if ((temp_size > 4*256) && (temp_size <= 6*256))
+			return WT_GET_DDR_SIZE_6GB;
+		else if ((temp_size > 6*256) && (temp_size <= 8*256))
+			return WT_GET_DDR_SIZE_8GB;
+		else if ((temp_size > 8*256) && (temp_size <= 10*256))
+			return WT_GET_DDR_SIZE_10GB;
+		else if ((temp_size > 10*256) && (temp_size <= 12*256))
+			return WT_GET_DDR_SIZE_12GB;
+		else if ((temp_size > 12*256) && (temp_size <= 16*256))
+			return WT_GET_DDR_SIZE_16GB;
+		else
+			return WT_GET_DDR_SIZE_ZERO;
+}
+
+
+static int calc_ufs_size(unsigned long long size)
+{
+		int temp_size;
+	/* Sector size => 512Byte, so we need to convert to GB size. */
+		temp_size = (int)((size * 512) / 1024 / 1024 / 1024);
+
+		if ((temp_size > 8) && (temp_size <= 16))
+			return WT_GET_UFS_SIZE_16GB;
+		else if ((temp_size > 16) && (temp_size <= 32))
+			return WT_GET_UFS_SIZE_32GB;
+		else if ((temp_size > 32) && (temp_size <= 64))
+			return WT_GET_UFS_SIZE_64GB;
+		else if ((temp_size > 64) && (temp_size <= 128))
+			return WT_GET_UFS_SIZE_128GB;
+		else if ((temp_size > 128) && (temp_size <= 256))
+			return WT_GET_UFS_SIZE_256GB;
+		else if ((temp_size > 256) && (temp_size <= 512))
+			return WT_GET_UFS_SIZE_512GB;
+		else if ((temp_size > 512) && (temp_size <= 1024))
+			return WT_GET_UFS_SIZE_1TB;
+		else
+			return WT_GET_UFS_SIZE_ZERO;
+}
+
 static ssize_t
-show_host_busy(struct device *dev, struct device_attribute *attr, char *buf)
+flash_name_show(struct device *dev, struct device_attribute *attr,
+		char *buf)
+{
+		struct scsi_device *sdev;
+		struct hd_struct *p = NULL;
+		struct gendisk **gd_t = ufs_disk;
+		unsigned long long ufs_size = 0;
+		int ret = 0;
+		char vendor_name[32] = {0};
+		char model_name[32] = {0};
+
+		sdev = to_scsi_device(dev);
+
+		for (; *gd_t != NULL; gd_t++) {
+			p = &((*gd_t)->part0);
+			ufs_size += (unsigned long long)part_nr_sects_read(p);
+		}
+		pr_info("%s: wt ufs sects num is <%llu>\n", __func__, ufs_size);
+		ret = sscanf(sdev->vendor, "%8s", vendor_name);
+		if (ret != 1)
+			return -EINVAL;
+
+		ret = sscanf(sdev->model, "%16s", model_name);
+		if (ret != 1)
+			return -EINVAL;
+
+		return snprintf(buf, 40, "%s_%s_%dGB_%dGB\n", vendor_name,
+			model_name, calc_ddr_size(), calc_ufs_size(ufs_size));
+}
+
+static DEVICE_ATTR_RO(flash_name);
+static ssize_t
+host_busy_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
+
 	return snprintf(buf, 20, "%d\n", scsi_host_busy(shost));
 }
-static DEVICE_ATTR(host_busy, S_IRUGO, show_host_busy, NULL);
+static DEVICE_ATTR_RO(host_busy);
 
 static struct attribute *scsi_sysfs_shost_attrs[] = {
 	&dev_attr_use_blk_mq.attr,
@@ -479,6 +573,7 @@ static void scsi_device_dev_release_usercontext(struct work_struct *work)
 static void scsi_device_dev_release(struct device *dev)
 {
 	struct scsi_device *sdp = to_scsi_device(dev);
+
 	execute_in_process_context(scsi_device_dev_release_usercontext,
 				   &sdp->ew);
 }
@@ -499,7 +594,7 @@ static int scsi_bus_match(struct device *dev, struct device_driver *gendrv)
 	sdp = to_scsi_device(dev);
 	if (sdp->no_uld_attach)
 		return 0;
-	return (sdp->inq_periph_qual == SCSI_INQ_PQ_CON)? 1: 0;
+	return (sdp->inq_periph_qual == SCSI_INQ_PQ_CON) ? 1 : 0;
 }
 
 static int scsi_bus_uevent(struct device *dev, struct kobj_uevent_env *env)
@@ -516,8 +611,8 @@ static int scsi_bus_uevent(struct device *dev, struct kobj_uevent_env *env)
 }
 
 struct bus_type scsi_bus_type = {
-        .name		= "scsi",
-        .match		= scsi_bus_match,
+		.name	= "scsi",
+		.match	= scsi_bus_match,
 	.uevent		= scsi_bus_uevent,
 #ifdef CONFIG_PM
 	.pm		= &scsi_bus_pm_ops,
@@ -549,14 +644,13 @@ void scsi_sysfs_unregister(void)
  * sdev_show_function: macro to create an attr function that can be used to
  * show a non-bit field.
  */
-#define sdev_show_function(field, format_string)				\
+#define sdev_show_function(field, format_string)			\
 static ssize_t								\
-sdev_show_##field (struct device *dev, struct device_attribute *attr,	\
-		   char *buf)						\
+field##_show(struct device *dev, struct device_attribute *attr, char *buf)	\
 {									\
 	struct scsi_device *sdev;					\
 	sdev = to_scsi_device(dev);					\
-	return snprintf (buf, 20, format_string, sdev->field);		\
+	return snprintf(buf, 20, format_string, sdev->field);		\
 }									\
 
 /*
@@ -564,132 +658,99 @@ sdev_show_##field (struct device *dev, struct device_attribute *attr,	\
  * read only field.
  */
 #define sdev_rd_attr(field, format_string)				\
-	sdev_show_function(field, format_string)			\
-static DEVICE_ATTR(field, S_IRUGO, sdev_show_##field, NULL);
-
-
+		sdev_show_function(field, format_string)		\
+static DEVICE_ATTR(field, 0444, field##_show, NULL);
 /*
  * sdev_rw_attr: create a function and attribute variable for a
  * read/write field.
  */
 #define sdev_rw_attr(field, format_string)				\
-	sdev_show_function(field, format_string)				\
+	sdev_show_function(field, format_string)			\
 									\
 static ssize_t								\
-sdev_store_##field (struct device *dev, struct device_attribute *attr,	\
-		    const char *buf, size_t count)			\
+field##_store(struct device *dev, struct device_attribute \
+				*attr, const char *buf, size_t count)	\
 {									\
 	struct scsi_device *sdev;					\
+	int ret;	\
 	sdev = to_scsi_device(dev);					\
-	sscanf (buf, format_string, &sdev->field);			\
-	return count;							\
-}									\
-static DEVICE_ATTR(field, S_IRUGO | S_IWUSR, sdev_show_##field, sdev_store_##field);
+	ret = sscanf(buf, format_string, &sdev->field);		\
+	if (ret != 1)							\
+		return -EINVAL;						\
+	else	\
+		return count; \
+}						\
+static DEVICE_ATTR(field, 0644, field##_show, field##_store);
 
-/* Currently we don't export bit fields, but we might in future,
- * so leave this code in */
-#if 0
-/*
- * sdev_rd_attr: create a function and attribute variable for a
- * read/write bit field.
- */
-#define sdev_rw_attr_bit(field)						\
-	sdev_show_function(field, "%d\n")					\
-									\
-static ssize_t								\
-sdev_store_##field (struct device *dev, struct device_attribute *attr,	\
-		    const char *buf, size_t count)			\
-{									\
-	int ret;							\
-	struct scsi_device *sdev;					\
-	ret = scsi_sdev_check_buf_bit(buf);				\
-	if (ret >= 0)	{						\
-		sdev = to_scsi_device(dev);				\
-		sdev->field = ret;					\
-		ret = count;						\
-	}								\
-	return ret;							\
-}									\
-static DEVICE_ATTR(field, S_IRUGO | S_IWUSR, sdev_show_##field, sdev_store_##field);
-
-/*
- * scsi_sdev_check_buf_bit: return 0 if buf is "0", return 1 if buf is "1",
- * else return -EINVAL.
- */
-static int scsi_sdev_check_buf_bit(const char *buf)
-{
-	if ((buf[1] == '\0') || ((buf[1] == '\n') && (buf[2] == '\0'))) {
-		if (buf[0] == '1')
-			return 1;
-		else if (buf[0] == '0')
-			return 0;
-		else 
-			return -EINVAL;
-	} else
-		return -EINVAL;
-}
-#endif
 /*
  * Create the actual show/store functions and data structures.
  */
-sdev_rd_attr (type, "%d\n");
-sdev_rd_attr (scsi_level, "%d\n");
-sdev_rd_attr (vendor, "%.8s\n");
-sdev_rd_attr (model, "%.16s\n");
-sdev_rd_attr (rev, "%.4s\n");
+sdev_rd_attr(type, "%d\n");
+sdev_rd_attr(scsi_level, "%d\n");
+sdev_rd_attr(vendor, "%.8s\n");
+sdev_rd_attr(model, "%.16s\n");
+sdev_rd_attr(rev, "%.4s\n");
 
 static ssize_t
-sdev_show_device_busy(struct device *dev, struct device_attribute *attr,
+device_busy_show(struct device *dev, struct device_attribute *attr,
 		char *buf)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
+
 	return snprintf(buf, 20, "%d\n", atomic_read(&sdev->device_busy));
 }
-static DEVICE_ATTR(device_busy, S_IRUGO, sdev_show_device_busy, NULL);
+static DEVICE_ATTR_RO(device_busy);
 
 static ssize_t
-sdev_show_device_blocked(struct device *dev, struct device_attribute *attr,
+device_blocked_show(struct device *dev, struct device_attribute *attr,
 		char *buf)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
+
 	return snprintf(buf, 20, "%d\n", atomic_read(&sdev->device_blocked));
 }
-static DEVICE_ATTR(device_blocked, S_IRUGO, sdev_show_device_blocked, NULL);
+static DEVICE_ATTR_RO(device_blocked);
 
 /*
  * TODO: can we make these symlinks to the block layer ones?
  */
 static ssize_t
-sdev_show_timeout (struct device *dev, struct device_attribute *attr, char *buf)
+timeout_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct scsi_device *sdev;
+
 	sdev = to_scsi_device(dev);
 	return snprintf(buf, 20, "%d\n", sdev->request_queue->rq_timeout / HZ);
 }
 
 static ssize_t
-sdev_store_timeout (struct device *dev, struct device_attribute *attr,
+timeout_store(struct device *dev, struct device_attribute *attr,
 		    const char *buf, size_t count)
 {
 	struct scsi_device *sdev;
-	int timeout;
+	int timeout, ret;
+
 	sdev = to_scsi_device(dev);
-	sscanf (buf, "%d\n", &timeout);
+	ret = sscanf(buf, "%d\n", &timeout);
+	if (ret != 1)
+		return -EINVAL;
 	blk_queue_rq_timeout(sdev->request_queue, timeout * HZ);
 	return count;
 }
-static DEVICE_ATTR(timeout, S_IRUGO | S_IWUSR, sdev_show_timeout, sdev_store_timeout);
+static DEVICE_ATTR_RW(timeout);
 
 static ssize_t
-sdev_show_eh_timeout(struct device *dev, struct device_attribute *attr, char *buf)
+eh_timeout_show(struct device *dev, struct device_attribute *attr,
+				char *buf)
 {
 	struct scsi_device *sdev;
+
 	sdev = to_scsi_device(dev);
 	return snprintf(buf, 20, "%u\n", sdev->eh_timeout / HZ);
 }
 
 static ssize_t
-sdev_store_eh_timeout(struct device *dev, struct device_attribute *attr,
+eh_timeout_store(struct device *dev, struct device_attribute *attr,
 		    const char *buf, size_t count)
 {
 	struct scsi_device *sdev;
@@ -707,19 +768,19 @@ sdev_store_eh_timeout(struct device *dev, struct device_attribute *attr,
 
 	return count;
 }
-static DEVICE_ATTR(eh_timeout, S_IRUGO | S_IWUSR, sdev_show_eh_timeout, sdev_store_eh_timeout);
+static DEVICE_ATTR_RW(eh_timeout);
 
 static ssize_t
-store_rescan_field (struct device *dev, struct device_attribute *attr,
+rescan_store(struct device *dev, struct device_attribute *attr,
 		    const char *buf, size_t count)
 {
 	scsi_rescan_device(dev);
 	return count;
 }
-static DEVICE_ATTR(rescan, S_IWUSR, NULL, store_rescan_field);
+static DEVICE_ATTR_WO(rescan);
 
 static ssize_t
-sdev_store_delete(struct device *dev, struct device_attribute *attr,
+delete_store(struct device *dev, struct device_attribute *attr,
 		  const char *buf, size_t count)
 {
 	struct kernfs_node *kn;
@@ -751,10 +812,10 @@ sdev_store_delete(struct device *dev, struct device_attribute *attr,
 	scsi_device_put(sdev);
 	return count;
 };
-static DEVICE_ATTR(delete, S_IWUSR, NULL, sdev_store_delete);
+static DEVICE_ATTR_WO(delete);
 
 static ssize_t
-store_state_field(struct device *dev, struct device_attribute *attr,
+state_store(struct device *dev, struct device_attribute *attr,
 		  const char *buf, size_t count)
 {
 	int i, ret;
@@ -763,6 +824,7 @@ store_state_field(struct device *dev, struct device_attribute *attr,
 
 	for (i = 0; i < ARRAY_SIZE(sdev_states); i++) {
 		const int len = strlen(sdev_states[i].name);
+
 		if (strncmp(sdev_states[i].name, buf, len) == 0 &&
 		   buf[len] == '\n') {
 			state = sdev_states[i].value;
@@ -780,7 +842,7 @@ store_state_field(struct device *dev, struct device_attribute *attr,
 }
 
 static ssize_t
-show_state_field(struct device *dev, struct device_attribute *attr, char *buf)
+state_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	const char *name = scsi_device_state_name(sdev->sdev_state);
@@ -791,11 +853,11 @@ show_state_field(struct device *dev, struct device_attribute *attr, char *buf)
 	return snprintf(buf, 20, "%s\n", name);
 }
 
-static DEVICE_ATTR(state, S_IRUGO | S_IWUSR, show_state_field, store_state_field);
+static DEVICE_ATTR_RW(state);
 
 static ssize_t
-show_queue_type_field(struct device *dev, struct device_attribute *attr,
-		      char *buf)
+queue_type_show(struct device *dev, struct device_attribute *attr,
+			char *buf)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	const char *name = "none";
@@ -807,21 +869,20 @@ show_queue_type_field(struct device *dev, struct device_attribute *attr,
 }
 
 static ssize_t
-store_queue_type_field(struct device *dev, struct device_attribute *attr,
+queue_type_store(struct device *dev, struct device_attribute *attr,
 		       const char *buf, size_t count)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 
 	if (!sdev->tagged_supported)
 		return -EINVAL;
-		
+
 	sdev_printk(KERN_INFO, sdev,
 		    "ignoring write to deprecated queue_type attribute");
 	return count;
 }
 
-static DEVICE_ATTR(queue_type, S_IRUGO | S_IWUSR, show_queue_type_field,
-		   store_queue_type_field);
+static DEVICE_ATTR_RW(queue_type);
 
 #define sdev_vpd_pg_attr(_page)						\
 static ssize_t							\
@@ -843,10 +904,10 @@ show_vpd_##_page(struct file *filp, struct kobject *kobj,	\
 	return ret;							\
 }									\
 static struct bin_attribute dev_attr_vpd_##_page = {		\
-	.attr =	{.name = __stringify(vpd_##_page), .mode = S_IRUGO },	\
+	.attr =	{.name = __stringify(vpd_##_page), .mode = 0444 },	\
 	.size = 0,							\
 	.read = show_vpd_##_page,					\
-};
+}
 
 sdev_vpd_pg_attr(pg83);
 sdev_vpd_pg_attr(pg80);
@@ -868,20 +929,20 @@ static ssize_t show_inquiry(struct file *filep, struct kobject *kobj,
 static struct bin_attribute dev_attr_inquiry = {
 	.attr = {
 		.name = "inquiry",
-		.mode = S_IRUGO,
+		.mode = 0444,
 	},
 	.size = 0,
 	.read = show_inquiry,
 };
 
 static ssize_t
-show_iostat_counterbits(struct device *dev, struct device_attribute *attr,
+iocounterbits_show(struct device *dev, struct device_attribute *attr,
 			char *buf)
 {
 	return snprintf(buf, 20, "%d\n", (int)sizeof(atomic_t) * 8);
 }
 
-static DEVICE_ATTR(iocounterbits, S_IRUGO, show_iostat_counterbits, NULL);
+static DEVICE_ATTR_RO(iocounterbits);
 
 #define show_sdev_iostat(field)						\
 static ssize_t								\
@@ -892,20 +953,21 @@ show_iostat_##field(struct device *dev, struct device_attribute *attr,	\
 	unsigned long long count = atomic_read(&sdev->field);		\
 	return snprintf(buf, 20, "0x%llx\n", count);			\
 }									\
-static DEVICE_ATTR(field, S_IRUGO, show_iostat_##field, NULL)
+static DEVICE_ATTR(field, 0444, show_iostat_##field, NULL)
 
 show_sdev_iostat(iorequest_cnt);
 show_sdev_iostat(iodone_cnt);
 show_sdev_iostat(ioerr_cnt);
 
 static ssize_t
-sdev_show_modalias(struct device *dev, struct device_attribute *attr, char *buf)
+modalias_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct scsi_device *sdev;
+
 	sdev = to_scsi_device(dev);
-	return snprintf (buf, 20, SCSI_DEVICE_MODALIAS_FMT "\n", sdev->type);
+	return snprintf(buf, 20, SCSI_DEVICE_MODALIAS_FMT "\n", sdev->type);
 }
-static DEVICE_ATTR(modalias, S_IRUGO, sdev_show_modalias, NULL);
+static DEVICE_ATTR_RO(modalias);
 
 #define DECLARE_EVT_SHOW(name, Cap_name)				\
 static ssize_t								\
@@ -923,7 +985,8 @@ sdev_store_evt_##name(struct device *dev, struct device_attribute *attr,\
 		      const char *buf, size_t count)			\
 {									\
 	struct scsi_device *sdev = to_scsi_device(dev);			\
-	int val = simple_strtoul(buf, NULL, 0);				\
+	unsigned long val;					\
+	kstrtoul(buf, 0, &val);				\
 	if (val == 0)							\
 		clear_bit(SDEV_EVT_##Cap_name, sdev->supported_events);	\
 	else if (val == 1)						\
@@ -936,9 +999,9 @@ sdev_store_evt_##name(struct device *dev, struct device_attribute *attr,\
 #define DECLARE_EVT(name, Cap_name)					\
 	DECLARE_EVT_SHOW(name, Cap_name)				\
 	DECLARE_EVT_STORE(name, Cap_name)				\
-	static DEVICE_ATTR(evt_##name, S_IRUGO, sdev_show_evt_##name,	\
+	static DEVICE_ATTR(evt_##name, 0444, sdev_show_evt_##name,	\
 			   sdev_store_evt_##name);
-#define REF_EVT(name) &dev_attr_evt_##name.attr
+#define REF_EVT(name) (&dev_attr_evt_##name.attr)
 
 DECLARE_EVT(media_change, MEDIA_CHANGE)
 DECLARE_EVT(inquiry_change_reported, INQUIRY_CHANGE_REPORTED)
@@ -948,17 +1011,18 @@ DECLARE_EVT(mode_parameter_change_reported, MODE_PARAMETER_CHANGE_REPORTED)
 DECLARE_EVT(lun_change_reported, LUN_CHANGE_REPORTED)
 
 static ssize_t
-sdev_store_queue_depth(struct device *dev, struct device_attribute *attr,
+queue_depth_store(struct device *dev, struct device_attribute *attr,
 		       const char *buf, size_t count)
 {
 	int depth, retval;
 	struct scsi_device *sdev = to_scsi_device(dev);
 	struct scsi_host_template *sht = sdev->host->hostt;
+	unsigned long val;
 
 	if (!sht->change_queue_depth)
 		return -EINVAL;
 
-	depth = simple_strtoul(buf, NULL, 0);
+	depth = kstrtoul(buf, 0, &val);
 
 	if (depth < 1 || depth > sdev->host->can_queue)
 		return -EINVAL;
@@ -973,11 +1037,10 @@ sdev_store_queue_depth(struct device *dev, struct device_attribute *attr,
 }
 sdev_show_function(queue_depth, "%d\n");
 
-static DEVICE_ATTR(queue_depth, S_IRUGO | S_IWUSR, sdev_show_queue_depth,
-		   sdev_store_queue_depth);
+static DEVICE_ATTR_RW(queue_depth);
 
 static ssize_t
-sdev_show_wwid(struct device *dev, struct device_attribute *attr,
+wwid_show(struct device *dev, struct device_attribute *attr,
 		    char *buf)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
@@ -990,7 +1053,7 @@ sdev_show_wwid(struct device *dev, struct device_attribute *attr,
 	}
 	return count;
 }
-static DEVICE_ATTR(wwid, S_IRUGO, sdev_show_wwid, NULL);
+static DEVICE_ATTR_RO(wwid);
 
 #define BLIST_FLAG_NAME(name)					\
 	[const_ilog2((__force __u64)BLIST_##name)] = #name
@@ -1000,7 +1063,7 @@ static const char *const sdev_bflags_name[] = {
 #undef BLIST_FLAG_NAME
 
 static ssize_t
-sdev_show_blacklist(struct device *dev, struct device_attribute *attr,
+blacklist_show(struct device *dev, struct device_attribute *attr,
 		    char *buf)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
@@ -1026,11 +1089,11 @@ sdev_show_blacklist(struct device *dev, struct device_attribute *attr,
 		len += snprintf(buf + len, PAGE_SIZE - len, "\n");
 	return len;
 }
-static DEVICE_ATTR(blacklist, S_IRUGO, sdev_show_blacklist, NULL);
+static DEVICE_ATTR_RO(blacklist);
 
 #ifdef CONFIG_SCSI_DH
 static ssize_t
-sdev_show_dh_state(struct device *dev, struct device_attribute *attr,
+dh_state_show(struct device *dev, struct device_attribute *attr,
 		   char *buf)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
@@ -1042,7 +1105,7 @@ sdev_show_dh_state(struct device *dev, struct device_attribute *attr,
 }
 
 static ssize_t
-sdev_store_dh_state(struct device *dev, struct device_attribute *attr,
+dh_state_store(struct device *dev, struct device_attribute *attr,
 		    const char *buf, size_t count)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
@@ -1078,11 +1141,10 @@ sdev_store_dh_state(struct device *dev, struct device_attribute *attr,
 	return err < 0 ? err : count;
 }
 
-static DEVICE_ATTR(dh_state, S_IRUGO | S_IWUSR, sdev_show_dh_state,
-		   sdev_store_dh_state);
+static DEVICE_ATTR_RW(dh_state);
 
 static ssize_t
-sdev_show_access_state(struct device *dev,
+access_state_show(struct device *dev,
 		       struct device_attribute *attr,
 		       char *buf)
 {
@@ -1096,13 +1158,13 @@ sdev_show_access_state(struct device *dev,
 	access_state = (sdev->access_state & SCSI_ACCESS_STATE_MASK);
 	access_state_name = scsi_access_state_name(access_state);
 
-	return sprintf(buf, "%s\n",
+	return snprintf(buf, "%s\n",
 		       access_state_name ? access_state_name : "unknown");
 }
-static DEVICE_ATTR(access_state, S_IRUGO, sdev_show_access_state, NULL);
+static DEVICE_ATTR_RO(access_state);
 
 static ssize_t
-sdev_show_preferred_path(struct device *dev,
+preferred_path_show(struct device *dev,
 			 struct device_attribute *attr,
 			 char *buf)
 {
@@ -1112,26 +1174,27 @@ sdev_show_preferred_path(struct device *dev,
 		return -EINVAL;
 
 	if (sdev->access_state & SCSI_ACCESS_STATE_PREFERRED)
-		return sprintf(buf, "1\n");
+		return snprintf(buf, "1\n");
 	else
-		return sprintf(buf, "0\n");
+		return snprintf(buf, "0\n");
 }
-static DEVICE_ATTR(preferred_path, S_IRUGO, sdev_show_preferred_path, NULL);
+static DEVICE_ATTR_RO(preferred_path);
 #endif
 
 static ssize_t
-sdev_show_queue_ramp_up_period(struct device *dev,
+queue_ramp_up_period_show(struct device *dev,
 			       struct device_attribute *attr,
 			       char *buf)
 {
 	struct scsi_device *sdev;
+
 	sdev = to_scsi_device(dev);
 	return snprintf(buf, 20, "%u\n",
 			jiffies_to_msecs(sdev->queue_ramp_up_period));
 }
 
 static ssize_t
-sdev_store_queue_ramp_up_period(struct device *dev,
+queue_ramp_up_period_store(struct device *dev,
 				struct device_attribute *attr,
 				const char *buf, size_t count)
 {
@@ -1145,9 +1208,7 @@ sdev_store_queue_ramp_up_period(struct device *dev,
 	return count;
 }
 
-static DEVICE_ATTR(queue_ramp_up_period, S_IRUGO | S_IWUSR,
-		   sdev_show_queue_ramp_up_period,
-		   sdev_store_queue_ramp_up_period);
+static DEVICE_ATTR_RW(queue_ramp_up_period);
 
 static umode_t scsi_sdev_attr_is_visible(struct kobject *kobj,
 					 struct attribute *attr, int i)
@@ -1158,7 +1219,7 @@ static umode_t scsi_sdev_attr_is_visible(struct kobject *kobj,
 
 	if (attr == &dev_attr_queue_depth.attr &&
 	    !sdev->host->hostt->change_queue_depth)
-		return S_IRUGO;
+		return 0444;
 
 	if (attr == &dev_attr_queue_ramp_up_period.attr &&
 	    !sdev->host->hostt->change_queue_depth)
@@ -1188,7 +1249,7 @@ static umode_t scsi_sdev_bin_attr_is_visible(struct kobject *kobj,
 	if (attr == &dev_attr_vpd_pg83 && !sdev->vpd_pg83)
 		return 0;
 
-	return S_IRUGO;
+	return 0444;
 }
 
 /* Default template for device attributes.  May NOT be modified */
@@ -1220,6 +1281,7 @@ static struct attribute *scsi_sdev_attrs[] = {
 	&dev_attr_preferred_path.attr,
 #endif
 	&dev_attr_queue_ramp_up_period.attr,
+	&dev_attr_flash_name.attr,
 	REF_EVT(media_change),
 	REF_EVT(inquiry_change_reported),
 	REF_EVT(capacity_change_reported),
@@ -1256,7 +1318,8 @@ static int scsi_target_add(struct scsi_target *starget)
 
 	error = device_add(&starget->dev);
 	if (error) {
-		dev_err(&starget->dev, "target device_add failed, error %d\n", error);
+		dev_err(&starget->dev, "target device_add failed, error %d\n",
+		error);
 		return error;
 	}
 	transport_add_device(&starget->dev);
@@ -1274,7 +1337,7 @@ static int scsi_target_add(struct scsi_target *starget)
  * @sdev:	scsi_device to add
  *
  * Return value:
- * 	0 on Success / non-zero on Failure
+ * 0 on Success / non-zero on Failure
  **/
 int scsi_sysfs_add_sdev(struct scsi_device *sdev)
 {
@@ -1321,7 +1384,8 @@ int scsi_sysfs_add_sdev(struct scsi_device *sdev)
 	error = bsg_scsi_register_queue(rq, &sdev->sdev_gendev);
 	if (error)
 		/* we're treating error on bsg register as non-fatal,
-		 * so pretend nothing went wrong */
+		 * so pretend nothing went wrong
+		 */
 		sdev_printk(KERN_INFO, sdev,
 			    "Failed to register bsg queue, errno=%d\n", error);
 
@@ -1595,5 +1659,7 @@ int scsi_is_sdev_device(const struct device *dev)
 EXPORT_SYMBOL(scsi_is_sdev_device);
 
 /* A blank transport template that is used in drivers that don't
- * yet implement Transport Attributes */
-struct scsi_transport_template blank_transport_template = { { { {NULL, }, }, }, };
+ * yet implement Transport Attributes
+ **/
+struct scsi_transport_template blank_transport_template = { { { {NULL,
+								}, }, }, };

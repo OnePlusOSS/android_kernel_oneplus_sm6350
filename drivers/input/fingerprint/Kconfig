@@ -1,0 +1,10 @@
+#
+# S86260AA1 WT Fingerprint driver configuration
+#
+
+config FINGERPRINT_EGIS520
+	bool "fingerprint egis"
+	default n
+	help
+	  Say Y here if you have a egis
+          If unsure, say N.

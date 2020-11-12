@@ -571,8 +571,16 @@ static void msm_gpio_dbg_show(struct seq_file *s, struct gpio_chip *chip)
 	unsigned gpio = chip->base;
 	unsigned i;
 
-	for (i = 0; i < chip->ngpio; i++, gpio++)
+	for (i = 0; i < chip->ngpio; i++, gpio++) {
+		/* Skip the gpio's which are protected by TZ */
+		/* Refer QUPAC_Access.c in TZ code */
+		if (i == 0 || i == 1 || i == 2 || i == 3 ||
+		    i == 59 || i == 60 || i == 61 || i == 62 ||
+		    i == 13 || i == 14 || i == 15 || i == 16 || i == 17) {
+			continue;
+		}
 		msm_gpio_dbg_show_one(s, NULL, chip, i, gpio);
+	}
 }
 
 #else

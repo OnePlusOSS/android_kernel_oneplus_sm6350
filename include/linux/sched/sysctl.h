@@ -41,6 +41,7 @@ extern unsigned int sysctl_sched_boost;
 extern unsigned int sysctl_sched_group_upmigrate_pct;
 extern unsigned int sysctl_sched_group_downmigrate_pct;
 extern unsigned int sysctl_sched_conservative_pl;
+extern unsigned int sysctl_sched_skip_affinity;
 extern unsigned int sysctl_sched_many_wakeup_threshold;
 extern unsigned int sysctl_sched_walt_rotate_big_tasks;
 extern unsigned int sysctl_sched_min_task_util_for_boost;
@@ -57,8 +58,6 @@ extern unsigned int sysctl_sched_window_stats_policy;
 extern unsigned int sysctl_sched_ravg_window_nr_ticks;
 extern unsigned int sysctl_sched_dynamic_ravg_window_enable;
 extern unsigned int sysctl_sched_prefer_spread;
-extern unsigned int sysctl_walt_rtg_cfs_boost_prio;
-extern unsigned int sysctl_walt_low_latency_task_boost;
 
 extern int
 walt_proc_group_thresholds_handler(struct ctl_table *table, int write,

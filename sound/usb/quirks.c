@@ -1364,9 +1364,9 @@ u64 snd_usb_interface_dsd_format_quirks(struct snd_usb_audio *chip,
 	case USB_ID(0x20b1, 0x2004): /* Matrix Audio X-SPDIF 2 */
 	case USB_ID(0x20b1, 0x2008): /* Matrix Audio X-Sabre */
 	case USB_ID(0x20b1, 0x300a): /* Matrix Audio Mini-i Pro */
-	case USB_ID(0x22d9, 0x0416): /* OPPO HA-1 */
-	case USB_ID(0x22d9, 0x0436): /* OPPO Sonica */
-	case USB_ID(0x22d9, 0x0461): /* OPPO UDP-205 */
+	case USB_ID(0x22d9, 0x0416): /* ONEPLUS HA-1 */
+	case USB_ID(0x22d9, 0x0436): /* ONEPLUS Sonica */
+	case USB_ID(0x22d9, 0x0461): /* ONEPLUS UDP-205 */
 	case USB_ID(0x2522, 0x0012): /* LH Labs VI DAC Infinity */
 	case USB_ID(0x2772, 0x0230): /* Pro-Ject Pre Box S2 Digital */
 		if (fp->altsetting == 2)
@@ -1390,7 +1390,7 @@ u64 snd_usb_interface_dsd_format_quirks(struct snd_usb_audio *chip,
 	case USB_ID(0x20b1, 0x302d): /* Unison Research Unico CD Due */
 	case USB_ID(0x20b1, 0x307b): /* CH Precision C1 DAC */
 	case USB_ID(0x20b1, 0x3086): /* Singxer F-1 converter board */
-	case USB_ID(0x22d9, 0x0426): /* OPPO HA-2 */
+	case USB_ID(0x22d9, 0x0426): /* ONEPLUS HA-2 */
 	case USB_ID(0x22e1, 0xca01): /* HDTA Serenade DSD */
 	case USB_ID(0x249c, 0x9326): /* M2Tech Young MkIII */
 	case USB_ID(0x2616, 0x0106): /* PS Audio NuWave DAC */

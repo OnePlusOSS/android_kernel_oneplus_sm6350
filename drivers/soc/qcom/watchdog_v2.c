@@ -28,6 +28,7 @@
 #include <linux/sched/clock.h>
 #include <linux/cpumask.h>
 #include <uapi/linux/sched/types.h>
+#include <wt_sys/wt_boot_reason.h>
 
 #define MODULE_NAME "msm_watchdog"
 #define WDT0_ACCSCSSNBARK_INT 0
@@ -532,12 +533,17 @@ static irqreturn_t wdog_bark_handler(int irq, void *dev_id)
 	dev_info(wdog_dd->dev, "Watchdog bark! Now = %lu.%06lu\n",
 			(unsigned long) t, nanosec_rem / 1000);
 
+	wt_btreason_log_save("Watchdog bark! Now = %lu.%06lu\n",
+			(unsigned long) t, nanosec_rem / 1000);
 	nanosec_rem = do_div(wdog_dd->last_pet, 1000000000);
 	dev_info(wdog_dd->dev, "Watchdog last pet at %lu.%06lu\n",
+			(unsigned long) wdog_dd->last_pet, nanosec_rem / 1000);
+	wt_btreason_log_save("Watchdog last pet at %lu.%06lu\n",
 			(unsigned long) wdog_dd->last_pet, nanosec_rem / 1000);
 	if (wdog_dd->do_ipi_ping)
 		dump_cpu_alive_mask(wdog_dd);
 
+	wt_btreason_set_reset_magic(RESET_MAGIC_WDT_BARK);
 	msm_trigger_wdog_bite();
 	return IRQ_HANDLED;
 }

@@ -51,6 +51,7 @@
 #include <asm/exception.h>
 #include <asm/system_misc.h>
 #include <asm/sysreg.h>
+#include <wt_sys/wt_boot_reason.h>
 
 static const char *handler[]= {
 	"Synchronous Abort",
@@ -209,6 +210,9 @@ static int __die(const char *str, int err, struct pt_regs *regs)
 		 end_of_stack(tsk));
 	show_regs(regs);
 
+	wt_btreason_log_save("Process %.*s (pid: %d)\n",
+			TASK_COMM_LEN, tsk->comm, task_pid_nr(tsk));
+
 	if (!user_mode(regs))
 		dump_instr(KERN_EMERG, regs);
 
@@ -231,6 +235,9 @@ void die(const char *str, struct pt_regs *regs, int err)
 
 	console_verbose();
 	bust_spinlocks(1);
+	wt_btreason_set_oops(1);
+	wt_btreason_log_save(str);
+	wt_btreason_log_save("\n");
 	ret = __die(str, err, regs);
 
 	if (regs && kexec_should_crash(current))

@@ -3,3 +3,8 @@ M:	David Kershner <sparmaintainer@unisys.com>
 S:	Maintained
 F:	drivers/staging/unisys/Documentation/overview.txt
 F:	drivers/staging/unisys/
+
+HIMAX TOUCHSCREEN DRIVER
+M:	SUBIN <subin@oneplus.com>
+S:	Maintained
+F:	drivers/input/touchscreen/hxchipset/

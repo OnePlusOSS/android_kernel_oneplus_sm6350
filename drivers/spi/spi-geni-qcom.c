@@ -264,12 +264,12 @@ static int setup_fifo_params(struct spi_device *spi_slv,
 
 		delay_params =
 		(struct spi_geni_qcom_ctrl_data *) spi_slv->controller_data;
-		cs_clk_delay =
-		(delay_params->spi_cs_clk_delay << SPI_CS_CLK_DELAY_SHFT)
-							& SPI_CS_CLK_DELAY_MSK;
-		inter_words_delay =
-			delay_params->spi_inter_words_delay &
-						SPI_INTER_WORDS_DELAY_MSK;
+		//cs_clk_delay =
+		//(delay_params->spi_cs_clk_delay << SPI_CS_CLK_DELAY_SHFT)
+		//					& SPI_CS_CLK_DELAY_MSK;
+		//inter_words_delay =
+		//	delay_params->spi_inter_words_delay &
+		//				SPI_INTER_WORDS_DELAY_MSK;
 		spi_delay_params =
 		(inter_words_delay | cs_clk_delay);
 	}
@@ -546,10 +546,10 @@ static int setup_gsi_xfer(struct spi_transfer *xfer,
 		delay_params =
 		(struct spi_geni_qcom_ctrl_data *) spi_slv->controller_data;
 
-		cs_clk_delay =
-			delay_params->spi_cs_clk_delay;
-		inter_words_delay =
-			delay_params->spi_inter_words_delay;
+		//cs_clk_delay =
+		//	delay_params->spi_cs_clk_delay;
+		//inter_words_delay =
+		//	delay_params->spi_inter_words_delay;
 	}
 
 	if ((xfer->bits_per_word != mas->cur_word_len) ||
@@ -861,7 +861,6 @@ static int spi_geni_prepare_transfer_hardware(struct spi_master *spi)
 				dev_info(mas->dev, "Failed to get rx DMA ch %ld\n",
 							PTR_ERR(mas->rx));
 				dma_release_channel(mas->tx);
-				goto setup_ipc;
 			}
 			mas->gsi = devm_kzalloc(mas->dev,
 				(sizeof(struct spi_geni_gsi) * NUM_SPI_XFER),
@@ -1147,12 +1146,6 @@ static int spi_geni_transfer_one(struct spi_master *spi,
 
 	if ((xfer->tx_buf == NULL) && (xfer->rx_buf == NULL)) {
 		dev_err(mas->dev, "Invalid xfer both tx rx are NULL\n");
-		return -EINVAL;
-	}
-
-	/* Check for zero length transfer */
-	if (xfer->len < 1) {
-		dev_err(mas->dev, "Zero length transfer\n");
 		return -EINVAL;
 	}
 
@@ -1669,6 +1662,9 @@ static int spi_geni_suspend(struct device *dev)
 {
 	int ret = 0;
 
+	struct spi_master *spi = get_spi_master(dev);
+	struct spi_geni_master *geni_mas = spi_master_get_devdata(spi);
+	/*
 	if (!pm_runtime_status_suspended(dev)) {
 		struct spi_master *spi = get_spi_master(dev);
 		struct spi_geni_master *geni_mas = spi_master_get_devdata(spi);
@@ -1689,6 +1685,9 @@ static int spi_geni_suspend(struct device *dev)
 			ret = -EBUSY;
 		}
 	}
+	*/
+	GENI_SE_ERR(geni_mas->ipc, true, dev,
+			"%s: Do nothing", __func__);
 	return ret;
 }
 #else

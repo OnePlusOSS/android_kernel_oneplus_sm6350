@@ -46,6 +46,10 @@
 #include <soc/qcom/ramdump.h>
 #include "icnss_private.h"
 #include "icnss_qmi.h"
+#include <linux/hardware_info.h>
+#include <linux/oem/project_info.h>
+static u32 fw_version;
+static u32 fw_version_ext;
 
 #define MAX_PROP_SIZE			32
 #define NUM_LOG_PAGES			10
@@ -934,6 +938,29 @@ static int icnss_driver_event_server_exit(void *data)
 
 	return 0;
 }
+
+/* Initial and show wlan firmware build version */
+void cnss_set_fw_version(u32 version, u32 ext)
+{
+	fw_version = version;
+	fw_version_ext = ext;
+}
+EXPORT_SYMBOL(cnss_set_fw_version);
+
+static ssize_t cnss_version_information_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	if (!penv)
+		return -ENODEV;
+	return scnprintf(buf, PAGE_SIZE, "%u.%u.%u.%u.%u\n",
+		 (fw_version & 0xf0000000) >> 28,
+	(fw_version & 0xf000000) >> 24, (fw_version & 0xf00000) >> 20,
+	fw_version & 0x7fff, (fw_version_ext & 0xf0000000) >> 28);
+}
+
+static DEVICE_ATTR(cnss_version_information, 0444,
+			cnss_version_information_show, NULL);
+
 
 static int icnss_call_driver_probe(struct icnss_priv *priv)
 {
@@ -1991,6 +2018,7 @@ int icnss_get_soc_info(struct device *dev, struct icnss_soc_info *info)
 {
 	char *fw_build_timestamp = NULL;
 
+	char wlan_info[254] = "qcom";
 	if (!penv || !dev) {
 		icnss_pr_err("Platform driver not initialized\n");
 		return -EINVAL;
@@ -2009,6 +2037,9 @@ int icnss_get_soc_info(struct device *dev, struct icnss_soc_info *info)
 		penv->fw_version_info.fw_build_timestamp,
 		WLFW_MAX_TIMESTAMP_LEN + 1);
 
+snprintf(wlan_info, sizeof(wlan_info), "wcn3991 chip_id:%d fw_version:%x", info->chip_id, info->fw_version);
+	icnss_pr_err("wlan_info: %s\n", wlan_info);
+	hardwareinfo_set_prop(HARDWARE_WIFI, wlan_info);
 	return 0;
 }
 EXPORT_SYMBOL(icnss_get_soc_info);
@@ -3496,8 +3527,11 @@ static int icnss_probe(struct platform_device *pdev)
 	if (ret)
 		icnss_pr_err("Failed to init platform device wakeup source, err = %d\n",
 			     ret);
-
 	penv = priv;
+	device_create_file(&penv->pdev->dev,
+		 &dev_attr_cnss_version_information);
+
+	push_component_info(WCN, "WCN3991", "QualComm");
 
 	init_completion(&priv->unblock_shutdown);
 
@@ -3522,6 +3556,9 @@ static int icnss_remove(struct platform_device *pdev)
 	device_init_wakeup(&penv->pdev->dev, false);
 
 	icnss_debugfs_destroy(penv);
+
+	device_remove_file(&penv->pdev->dev,
+		 &dev_attr_cnss_version_information);
 
 	icnss_sysfs_destroy(penv);
 
