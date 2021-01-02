@@ -796,7 +796,7 @@ static int uas_slave_alloc(struct scsi_device *sdev)
 {
 	struct uas_dev_info *devinfo =
 		(struct uas_dev_info *)sdev->host->hostdata;
-	int maxp;
+	//int maxp;
 
 	sdev->hostdata = devinfo;
 
@@ -816,8 +816,8 @@ static int uas_slave_alloc(struct scsi_device *sdev)
 	 * pessimistic requirement.
 	 */
 
-	maxp = usb_maxpacket(devinfo->udev, devinfo->data_in_pipe, 0);
-	blk_queue_virt_boundary(sdev->request_queue, maxp - 1);
+	//maxp = usb_maxpacket(devinfo->udev, devinfo->data_in_pipe, 0);
+	//blk_queue_virt_boundary(sdev->request_queue, maxp - 1);
 
 	/*
 	 * The protocol has no requirements on alignment in the strict sense.

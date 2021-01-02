@@ -3530,9 +3530,7 @@ static int icnss_probe(struct platform_device *pdev)
 	penv = priv;
 	device_create_file(&penv->pdev->dev,
 		 &dev_attr_cnss_version_information);
-
 	push_component_info(WCN, "WCN3991", "QualComm");
-
 	init_completion(&priv->unblock_shutdown);
 
 	icnss_pr_info("Platform driver probed successfully\n");

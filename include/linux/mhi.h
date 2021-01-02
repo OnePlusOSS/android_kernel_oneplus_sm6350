@@ -27,6 +27,7 @@ struct mhi_sfr_info;
  * @MHI_CB_EE_MISSION_MODE: MHI device entered Mission Mode ee
  * @MHI_CB_SYS_ERROR: MHI device enter error state (may recover)
  * @MHI_CB_FATAL_ERROR: MHI device entered fatal error
+ * @MHI_CB_BOOTUP_TIMEOUT: MHI device did not get to a bootup state in time
  */
 enum MHI_CB {
 	MHI_CB_IDLE,
@@ -39,6 +40,7 @@ enum MHI_CB {
 	MHI_CB_SYS_ERROR,
 	MHI_CB_FATAL_ERROR,
 	MHI_CB_FW_FALLBACK_IMG,
+	MHI_CB_BOOTUP_TIMEOUT,
 };
 
 /**
@@ -834,6 +836,12 @@ int mhi_get_remote_time(struct mhi_device *mhi_dev,
 int mhi_get_remote_time_sync(struct mhi_device *mhi_dev,
 			     u64 *t_host,
 			     u64 *t_dev);
+
+/**
+ * mhi_get_exec_env - Return execution environment of the device
+ * @mhi_cntrl: MHI controller
+ */
+enum mhi_ee mhi_get_exec_env(struct mhi_controller *mhi_cntrl);
 
 /**
  * mhi_get_mhi_state - Return MHI state of device

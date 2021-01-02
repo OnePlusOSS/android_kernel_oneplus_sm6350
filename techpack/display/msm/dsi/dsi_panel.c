@@ -11,7 +11,6 @@
 #include <video/mipi_display.h>
 #include <linux/oem/boot_mode.h>
 #include <linux/version.h>
-
 #include "dsi_panel.h"
 #include "dsi_ctrl_hw.h"
 #include "dsi_parser.h"
@@ -990,7 +989,7 @@ static int dsi_panel_update_backlight(struct dsi_panel *panel,
 		bl_lvl = (((bl_lvl & 0xff) << 8) | (bl_lvl >> 8));
 	}
 	rc = mipi_dsi_dcs_set_display_brightness(dsi, bl_lvl);
-#endif
+	#endif
 	if (rc < 0)
 		DSI_ERR("failed to update dcs backlight:%d\n", bl_lvl);
 error:

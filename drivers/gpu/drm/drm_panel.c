@@ -187,7 +187,9 @@ EXPORT_SYMBOL(drm_panel_notifier_unregister);
 int drm_panel_notifier_call_chain(struct drm_panel *panel,
 	unsigned long val, void *v)
 {
+
 	return blocking_notifier_call_chain(&panel->nh, val, v);
+
 }
 EXPORT_SYMBOL(drm_panel_notifier_call_chain);
 
