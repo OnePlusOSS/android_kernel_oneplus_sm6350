@@ -13,6 +13,12 @@
 #include "cam_common_util.h"
 #include "cam_packet_util.h"
 
+#include <linux/hardware_info.h>
+extern int hardwareinfo_set_prop(int cmd, const char *name);
+#define OTP_SENSOR_ADDR 0x6
+#define OTP_SENSOR_DATA 0x55
+#define OTP_MATERIAL_ADDR 0xE1
+#define MAX_MODULE_NAME_SIZE 128
 #define MAX_READ_SIZE  0x7FFFF
 
 /**
@@ -1060,6 +1066,10 @@ static int32_t cam_eeprom_get_cal_data(struct cam_eeprom_ctrl_t *e_ctrl,
 	size_t                buf_size;
 	uint8_t               *read_buffer;
 	size_t                remain_len = 0;
+	uint8_t               *base = NULL;
+	char                  moduleName[MAX_MODULE_NAME_SIZE] = { 0 };
+	char                  tempData[MAX_MODULE_NAME_SIZE]   = { 0 };
+	char                  tempName[MAX_MODULE_NAME_SIZE]   = { 0 };
 
 	io_cfg = (struct cam_buf_io_cfg *) ((uint8_t *)
 		&csl_packet->payload +
@@ -1114,6 +1124,19 @@ static int32_t cam_eeprom_get_cal_data(struct cam_eeprom_ctrl_t *e_ctrl,
 		}
 	}
 
+	if((e_ctrl->soc_info.index == 1)&&(OTP_SENSOR_DATA == *(e_ctrl->cal_data.mapdata + OTP_SENSOR_ADDR)))
+	{
+		base = e_ctrl->cal_data.mapdata + OTP_MATERIAL_ADDR;
+		for (i = 0; i < 7; i++)
+		{
+			sprintf(tempData,"%c",*base);
+			strcat(tempName,tempData);
+			base++;
+		}
+		CAM_DBG(CAM_EEPROM, "tempName:%s",tempName);
+		sprintf(moduleName,"IMX471_%s_Xinli",tempName);
+		hardwareinfo_set_prop(HARDWARE_FRONT_CAM, moduleName);
+	}
 	return rc;
 }
 
