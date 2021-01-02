@@ -485,6 +485,7 @@ struct chip_data_hx83112f {
 #endif
     /********SPI bus*******************************/
 	struct mutex spi_lock;
+	struct mutex burst_lock;
 	struct workqueue_struct *himax_0f_update_wq;
 	struct delayed_work work_0f_update;
 	uint8_t *tmp_data;

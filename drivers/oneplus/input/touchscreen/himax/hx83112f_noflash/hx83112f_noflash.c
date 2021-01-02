@@ -108,6 +108,8 @@ uint8_t HX_PROC_SEND_FLAG;
 struct dsi_panel *TP_Panel = NULL;
 extern int tp_shutdown(struct device *dev);
 
+static uint8_t *data_byte;
+
 /*******Part0: SPI Interface***************/
 #ifdef CONFIG_TOUCHPANEL_MTK_PLATFORM
 	const struct mtk_chip_config hx_spi_ctrdata = {
@@ -289,20 +291,25 @@ void himax_flash_write_burst(uint8_t *reg_byte, uint8_t *write_data)
 void himax_flash_write_burst_length(uint8_t *reg_byte,
 									uint8_t *write_data, int length)
 {
-	uint8_t *data_byte;
-
-	data_byte = kzalloc(sizeof(uint8_t) * (length + 4), GFP_KERNEL);
+	//uint8_t *data_byte;
+	//data_byte = kzalloc(sizeof(uint8_t) * (length + 4), GFP_KERNEL);
+	mutex_lock(&(g_chip_info->burst_lock));
 	if (data_byte == NULL) {
-		TPD_INFO("%s: Can't allocate enough buf\n", __func__);
-		return;
+		data_byte = kzalloc(sizeof(uint8_t) * (HX64K + 4), GFP_KERNEL);
+		if(data_byte == NULL){
+			TPD_INFO("%s: Can't allocate enough buf\n", __func__);
+			return;
+		}
 	}
+
 	memcpy(data_byte, reg_byte, 4); /* assign addr 4bytes */
 	memcpy(data_byte + 4, write_data, length); /* assign data n bytes */
 
 	if (himax_bus_write(0, length + 4, data_byte) < 0)
 		TPD_INFO("%s: spi bus access fail!\n", __func__);
 
-	kfree(data_byte);
+	mutex_unlock(&(g_chip_info->burst_lock));
+	//kfree(data_byte);
 }
 
 void himax_burst_enable(uint8_t auto_add_4_byte)
@@ -6943,6 +6950,11 @@ static int hx83112f_tp_probe(struct spi_device *spi)
 		goto err_g_fw_buf;
 	}
 
+	data_byte = kzalloc(sizeof(uint8_t) * (HX64K + 4), GFP_KERNEL);
+	if(data_byte == NULL){
+		TPD_INFO("%s: Can't allocate enough buf in himax probe\n", __func__);
+	}
+
 	//step3:binding dev for easy operate
 	chip_info->hx_spi = spi;
 	chip_info->syna_ops = &hx83112f_proc_ops;
@@ -6955,6 +6967,7 @@ static int hx83112f_tp_probe(struct spi_device *spi)
 	ts->chip_data = chip_info;
 	chip_info->hw_res = &ts->hw_res;
 	mutex_init(&(chip_info->spi_lock));
+	mutex_init(&(chip_info->burst_lock));
 	chip_info->touch_direction = VERTICAL_SCREEN;
 	chip_info->using_headfile = false;
 	chip_info->first_download_finished = false;
@@ -7042,8 +7055,8 @@ err_g_fw_buf:
 err_register_driver:
 	hx83112f_enable_interrupt(chip_info, false);
 
-	common_touch_data_free(ts);
-	ts = NULL;
+	//common_touch_data_free(ts);
+	//ts = NULL;
 	kfree(hx_touch_data);
 	kfree(chip_info);
 
