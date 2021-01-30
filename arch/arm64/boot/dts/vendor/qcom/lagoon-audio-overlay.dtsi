@@ -138,7 +138,6 @@
 				<6 SPKR_R_BOOST 0x3>, <7 SPKR_L_VI 0x3>,
 				<8 SPKR_R_VI 0x3>;
 			qcom,swr-num-dev = <0>;
-			/*
 			wsa883x_0221: wsa883x@02170221 {
 				compatible = "qcom,wsa883x";
 				reg = <0x02 0x02170221>;
@@ -164,7 +163,6 @@
 				qcom,cdc-vdd-1p8-lpm-supported = <1>;
 				qcom,cdc-static-supplies = "cdc-vdd-1p8";
 			};
-			*/
 		};
 
 	};
