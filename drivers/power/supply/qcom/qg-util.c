@@ -359,7 +359,220 @@ int qg_write_monotonic_soc(struct qpnp_qg *chip, int msoc)
 
 	return rc;
 }
+#ifdef OEM_TARGET_PRODUCT_EBBA
+int g_oplus_qg_ibta;
+extern bool is_batt_id_valid(struct qpnp_qg *chip);
+#endif
 
+#ifdef OEM_TARGET_PRODUCT_EBBA
+struct vadc_map_pt_calib {
+	s32 x;
+	s32 y;
+};
+
+static const struct vadc_map_pt_calib adcmap_batt_therm_30k_calib[] = {
+	{1631,	-400},
+	{1607,	-380},
+	{1581,	-360},
+	{1554,	-340},
+	{1526,	-320},
+	{1496,	-300},
+	{1465,	-280},
+	{1433,	-260},
+	{1400,	-240},
+	{1366,	-220},
+	{1331,	-200},
+	{1295,	-180},
+	{1259,	-160},
+	{1223,	-140},
+	{1187,	-120},
+	{1150,	-100},
+	{1114,	-80},
+	{1078,	-60},
+	{1042,	-40},
+	{1007,	-20},
+	{972,	0},
+	{939,	20},
+	{906,	40},
+	{875,	60},
+	{844,	80},
+	{814,	100},
+	{786,	120},
+	{758,	140},
+	{732,	160},
+	{707,	180},
+	{683,	200},
+	{660,	220},
+	{638,	240},
+	{618,	260},
+	{598,	280},
+	{579,	300},
+	{562,	320},
+	{545,	340},
+	{530,	360},
+	{515,	380},
+	{501,	400},
+	{488,	420},
+	{475,	440},
+	{464,	460},
+	{453,	480},
+	{442,	500},
+	{433,	520},
+	{423,	540},
+	{415,	560},
+	{407,	580},
+	{399,	600},
+	{392,	620},
+	{386,	640},
+	{379,	660},
+	{374,	680},
+	{368,	700},
+	{363,	720},
+	{358,	740},
+	{353,	760},
+	{349,	780},
+	{345,	800},
+	{341,	820},
+	{338,	840},
+	{334,	860},
+	{331,	880},
+	{328,	900},
+	{325,	920},
+	{323,	940},
+	{320,	960},
+	{318,	980},
+};
+
+static int qcom_vadc_map_voltage_temp_calib_vt(const struct vadc_map_pt_calib *pts,
+				      u32 tablesize, s32 input, s32 *output)
+{
+	bool descending = 1;
+	u32 i = 0;
+
+	if (!pts)
+		return -EINVAL;
+
+	/* Check if table is descending or ascending */
+	if (tablesize > 1) {
+		if (pts[0].x < pts[1].x)
+			descending = 0;
+	}
+
+	while (i < tablesize) {
+		if ((descending) && (pts[i].x < input)) {
+			/* table entry is less than measured*/
+			 /* value and table is descending, stop */
+			break;
+		} else if ((!descending) &&
+				(pts[i].x > input)) {
+			/* table entry is greater than measured*/
+			/*value and table is ascending, stop */
+			break;
+		}
+		i++;
+	}
+
+	if (i == 0) {
+		*output = pts[0].y;
+	} else if (i == tablesize) {
+		*output = pts[tablesize - 1].y;
+	} else {
+		/* result is between search_index and search_index-1 */
+		/* interpolate linearly */
+		*output = (((s32)((pts[i].y - pts[i - 1].y) *
+			(input - pts[i - 1].x)) /
+			(pts[i].x - pts[i - 1].x)) +
+			pts[i - 1].y);
+	}
+
+	return 0;
+}
+
+static int qcom_vadc_map_voltage_temp_calib_tv(const struct vadc_map_pt_calib *pts,
+					u32 tablesize, s32 input, s32 *output)
+{
+	bool descending = 1;
+	u32 i = 0;
+
+	if (!pts)
+		return -EINVAL;
+
+	/* Check if table is descending or ascending */
+	if (tablesize > 1) {
+		if (pts[0].y < pts[1].y)
+			descending = 0;
+	}
+
+	while (i < tablesize) {
+		if ((descending) && (pts[i].y < input)) {
+			/* table entry is less than measured*/
+			/* value and table is descending, stop */
+			break;
+		} else if ((!descending) &&
+			 (pts[i].y > input)) {
+			/* table entry is greater than measured*/
+			/*value and table is ascending, stop */
+			break;
+		}
+		i++;
+	}
+
+	if (i == 0) {
+		*output = pts[0].x;
+	} else if (i == tablesize) {
+		*output = pts[tablesize - 1].x;
+	} else {
+		/* result is between search_index and search_index-1 */
+		/* interpolate linearly */
+		*output = (((s32)((pts[i].x - pts[i - 1].x) *
+		 (input - pts[i - 1].y)) /
+		 (pts[i].y - pts[i - 1].y)) +
+		 pts[i - 1].x);
+	}
+
+	return 0;
+}
+
+int qg_get_battery_temp(struct qpnp_qg *chip, int *temp)
+{
+	int rc = 0;
+	int therm_pre = 0, therm_now = 0;
+	int voltage_pre = 0, voltage_now = 0;
+
+	if (chip->battery_missing || chip->batt_therm_chan == NULL) {
+		*temp = -400;
+		pr_err("battery_missing or batt_therm_chan == NULL\n");
+		return 0;
+	}
+
+	rc = iio_read_channel_processed(chip->batt_therm_chan, &therm_pre);
+	if (rc < 0) {
+		pr_err("Failed reading BAT_TEMP over ADC rc=%d\n", rc);
+		return rc;
+	}
+
+	therm_now = therm_pre;
+	rc = qcom_vadc_map_voltage_temp_calib_tv(adcmap_batt_therm_30k_calib,
+				 ARRAY_SIZE(adcmap_batt_therm_30k_calib),
+				 therm_pre, &voltage_pre);
+
+	if (g_oplus_qg_ibta < -6000)
+		g_oplus_qg_ibta = -6000;
+	if (g_oplus_qg_ibta > 6000)
+		g_oplus_qg_ibta = 6000;
+	voltage_now = voltage_pre + g_oplus_qg_ibta / 1000 * 4;
+
+	rc = qcom_vadc_map_voltage_temp_calib_vt(adcmap_batt_therm_30k_calib,
+					 ARRAY_SIZE(adcmap_batt_therm_30k_calib),
+					 voltage_now, &therm_now);
+
+	*temp = therm_now;
+	pr_debug("ntc_calibration: voltage_pre = %d, therm_pre = %d, voltage = %d, ichg = %d, therm = %d\n",
+			voltage_pre, therm_pre, voltage_now, g_oplus_qg_ibta, therm_now);
+
+	return 0;
+}
+#else
 int qg_get_battery_temp(struct qpnp_qg *chip, int *temp)
 {
 	int rc = 0;
@@ -378,6 +591,7 @@ int qg_get_battery_temp(struct qpnp_qg *chip, int *temp)
 
 	return 0;
 }
+#endif
 
 int qg_get_battery_current(struct qpnp_qg *chip, int *ibat_ua)
 {
@@ -411,7 +625,9 @@ int qg_get_battery_current(struct qpnp_qg *chip, int *ibat_ua)
 
 	last_ibat = sign_extend32(last_ibat, 15);
 	*ibat_ua = qg_iraw_to_ua(chip, last_ibat);
-
+#ifdef OEM_TARGET_PRODUCT_EBBA
+	g_oplus_qg_ibta = *ibat_ua / 1000;
+#endif
 release:
 	/* release */
 	qg_masked_write(chip, chip->qg_base + QG_DATA_CTL2_REG,

@@ -42,8 +42,11 @@
 #include <asm/virt.h>
 
 #include <linux/syscore_ops.h>
-
+/* Add for battery historian */
+#include <linux/wakeup_reason.h>
 #include "irq-gic-common.h"
+
+unsigned int qrtr_first_msg = 1;
 
 struct redist_region {
 	void __iomem		*redist_base;
@@ -395,7 +398,12 @@ static void gic_show_resume_irq(struct gic_chip_data *gic)
 		else if (desc->action && desc->action->name)
 			name = desc->action->name;
 
+		/* Add for battery historian */
+		if (name != NULL)
+			log_irq_wakeup_reason(irq);
+
 		pr_warn("%s: %d triggered %s\n", __func__, irq, name);
+		qrtr_first_msg = 0;
 	}
 }
 

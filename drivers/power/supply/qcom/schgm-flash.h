@@ -8,6 +8,14 @@
 
 #include <linux/bitops.h>
 
+
+
+/* gerry.ding@BSP.CHG.Basic, 2020/12/10, Add for charging */
+
+
+
+
+
 #define SCHGM_FLASH_BASE			0xA600
 
 #define SCHGM_FLASH_STATUS_2_REG		(SCHGM_FLASH_BASE + 0x07)

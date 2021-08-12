@@ -36,12 +36,63 @@
 #include "qg-soc.h"
 #include "qg-battery-profile.h"
 #include "qg-defs.h"
+#ifndef OEM_TARGET_PRODUCT_EBBA
+#include <linux/oem/power/oem_external_fg.h>
+#endif
 
+#ifdef OEM_TARGET_PRODUCT_BILLIE
+//+Bug 550748 xujianbang.wt,Modifiy,20200514,shows battery/bms/chg hardwareinfo
+#include <linux/hardware_info.h>
+#define BMS_GAUGE_TYPE    "pm7250b_qg"
+//-Bug 550748 xujianbang.wt,Modifiy,20200514,shows battery/bms/chg hardwareinfo
+#endif
+
+#include <linux/proc_fs.h>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#ifdef OEM_TARGET_PRODUCT_EBBA
+#include <linux/hardware_info.h>
+#define QCOMM_PMIC_TYPE    "pm7250b"
+#endif
+
+#ifdef OEM_TARGET_PRODUCT_BILLIE
+static int qg_debug_mask = QG_DEBUG_IRQ | QG_DEBUG_PROFILE;
+#else
 static int qg_debug_mask;
+#endif
+
+#ifndef OEM_TARGET_PRODUCT_EBBA
+/* @bsp, 2019/07/05 Battery & Charging porting */
+static void oem_update_cc_cv_setpoint(struct qpnp_qg *chip,
+       int cv_float_point);
+static void oneplus_set_allow_read_iic(struct qpnp_qg *chip,
+       bool status);
+static void oneplus_set_lcd_off_status(struct qpnp_qg *chip,
+       bool status);
+static struct external_battery_gauge *external_fg;
+#endif
+
 
 static int qg_esr_mod_count = 30;
 static ssize_t esr_mod_count_show(struct device *dev, struct device_attribute
-				     *attr, char *buf)
+					 *attr, char *buf)
 {
 	return snprintf(buf, PAGE_SIZE, "%d\n", qg_esr_mod_count);
 }
@@ -59,6 +110,26 @@ static ssize_t esr_mod_count_store(struct device *dev,
 	return count;
 }
 static DEVICE_ATTR_RW(esr_mod_count);
+
+#ifndef OEM_TARGET_PRODUCT_EBBA
+void external_battery_gauge_register(
+				struct external_battery_gauge *batt_gauge)
+{
+	if (external_fg) {
+		external_fg = batt_gauge;
+		pr_err("multiple battery gauge called\n");
+	} else
+		external_fg = batt_gauge;
+}
+EXPORT_SYMBOL(external_battery_gauge_register);
+
+void external_battery_gauge_unregister(
+				struct external_battery_gauge *batt_gauge)
+{
+	external_fg = NULL;
+}
+EXPORT_SYMBOL(external_battery_gauge_unregister);
+#endif
 
 static int qg_esr_count = 3;
 static ssize_t esr_count_show(struct device *dev, struct device_attribute
@@ -124,6 +195,8 @@ static bool is_battery_present(struct qpnp_qg *chip)
 #define DEBUG_BATT_ID_HIGH	8500
 static bool is_debug_batt_id(struct qpnp_qg *chip)
 {
+
+/* Yichun.Chen  PSW.BSP.CHG  2018-04-24  use oplus BAT_ID */
 	if (is_between(DEBUG_BATT_ID_LOW, DEBUG_BATT_ID_HIGH,
 					chip->batt_id_ohm))
 		return true;
@@ -176,7 +249,7 @@ static int qg_read_ocv(struct qpnp_qg *chip, u32 *ocv_uv, u32 *ocv_raw, u8 type)
 	temp = *ocv_raw;
 	*ocv_uv = V_RAW_TO_UV(temp);
 
-	pr_debug("%s: OCV_RAW=%x OCV=%duV\n", ocv_name, *ocv_raw, *ocv_uv);
+	pr_err("%s: OCV_RAW=%x OCV=%duV\n", ocv_name, *ocv_raw, *ocv_uv);
 
 	return rc;
 }
@@ -257,6 +330,8 @@ static void qg_notify_charger(struct qpnp_qg *chip)
 	if (!chip->profile_loaded)
 		return;
 
+#ifndef OPLUS_FEATURE_CHG_BASIC
+/*zhouhaikang@BSP.CHG.Basic,2020/10/31,add for chg*/
 	prop.intval = chip->bp.float_volt_uv;
 	rc = power_supply_set_property(chip->batt_psy,
 			POWER_SUPPLY_PROP_VOLTAGE_MAX, &prop);
@@ -265,6 +340,7 @@ static void qg_notify_charger(struct qpnp_qg *chip)
 			rc);
 		return;
 	}
+#endif
 
 	prop.intval = chip->bp.fastchg_curr_ma * 1000;
 	rc = power_supply_set_property(chip->batt_psy,
@@ -275,7 +351,7 @@ static void qg_notify_charger(struct qpnp_qg *chip)
 		return;
 	}
 
-	pr_debug("Notified charger on float voltage and FCC\n");
+	pr_err("Notified charger on float voltage and FCC\n");
 
 	rc = power_supply_get_property(chip->batt_psy,
 			POWER_SUPPLY_PROP_CHARGE_TERM_CURRENT, &prop);
@@ -383,7 +459,16 @@ static int qg_config_s2_state(struct qpnp_qg *chip,
 		acc_length = chip->dt.sleep_s2_acc_length;
 		break;
 	case S2_DEFAULT:
+#ifdef OPLUS_FEATURE_CHG_BASIC
+/*zhouhaikang@BSP.CHG.Basic,2020/11/12,add for chg*/
+#ifndef OEM_TARGET_PRODUCT_EBBA
+		fifo_length = chip->dt.fast_chg_s2_fifo_length;
+#else
 		fifo_length = chip->dt.s2_fifo_length;
+#endif
+#else
+		fifo_length = chip->dt.s2_fifo_length;
+#endif
 		acc_interval = chip->dt.s2_acc_intvl_ms;
 		acc_length = chip->dt.s2_acc_length;
 		break;
@@ -458,7 +543,7 @@ static int qg_process_fifo(struct qpnp_qg *chip, u32 fifo_length)
 	chip->kdata.fifo_time = (u32)rtc_sec;
 
 	if (!fifo_length) {
-		pr_debug("No FIFO data\n");
+		pr_err("No FIFO data\n");
 		return 0;
 	}
 
@@ -557,7 +642,7 @@ static int qg_process_accumulator(struct qpnp_qg *chip)
 	}
 
 	if (!count || count < 10) { /* Ignore small accumulator data */
-		pr_debug("No ACCUMULATOR data!\n");
+		pr_err("No ACCUMULATOR data!\n");
 		return 0;
 	}
 
@@ -1017,7 +1102,11 @@ static int qg_process_esr_data(struct qpnp_qg *chip)
 
 	return 0;
 }
-
+#ifdef OPLUS_FEATURE_CHG_BASIC
+/*zhouhaikang@BSP.CHG.Basic,2020/10/31,add for chg*/
+extern int oplus_chg_get_ffc_status(void);//kilody
+extern bool oplus_warp_get_fastchg_ing(void);
+#endif
 static int qg_esr_estimate(struct qpnp_qg *chip)
 {
 	int rc, i, ibat = 0, temp = 0;
@@ -1026,7 +1115,11 @@ static int qg_esr_estimate(struct qpnp_qg *chip)
 
 	if (chip->dt.esr_disable)
 		return 0;
-
+#ifdef OPLUS_FEATURE_CHG_BASIC
+/*zhouhaikang@BSP.CHG.Basic,2020/10/31,add for chg*/
+	if (oplus_warp_get_fastchg_ing())
+		return 0;
+#endif
 	/*
 	 * Charge - enable ESR estimation if IBAT > MIN_IBAT.
 	 * Discharge - enable ESR estimation only if enabled via DT.
@@ -1392,7 +1485,7 @@ static irqreturn_t qg_vbat_empty_handler(int irq, void *data)
 			chip->battery_missing)
 		return IRQ_HANDLED;
 
-	pr_warn("VBATT EMPTY SOC = 0\n");
+	pr_err("VBATT EMPTY SOC = 0\n");
 
 	chip->catch_up_soc = 0;
 	qg_scale_soc(chip, true);
@@ -1469,7 +1562,11 @@ static struct qg_irq_info qg_irqs[] = {
 	[QG_FIFO_UPDATE_DONE_IRQ] = {
 		.name		= "qg-fifo-done",
 		.handler	= qg_fifo_update_done_handler,
-		.wake		= true,
+#ifdef OEM_TARGET_PRODUCT_BILLIE
+		.wake           = false,
+#else
+		.wake           = true,
+#endif
 	},
 	[QG_GOOD_OCV_IRQ] = {
 		.name		= "qg-good-ocv",
@@ -1735,6 +1832,11 @@ static int qg_store_cycle_count(void *data, u16 *buf, int id, int length)
 #define DEFAULT_BATT_TYPE	"Unknown Battery"
 #define MISSING_BATT_TYPE	"Missing Battery"
 #define DEBUG_BATT_TYPE		"Debug Board"
+
+#ifdef OEM_TARGET_PRODUCT_BILLIE
+#define OP_AVACI_BATT_TYPE	"OP_ATL_4P45_4300mAH" //"OP_4115mAh"
+#endif
+
 static const char *qg_get_battery_type(struct qpnp_qg *chip)
 {
 	if (chip->battery_missing)
@@ -1798,6 +1900,9 @@ static int qg_get_charge_counter(struct qpnp_qg *chip, int *charge_counter)
 	int rc, cc_soc = 0;
 	int64_t temp = 0;
 
+	if (chip == NULL) {
+		return 0;
+	}
 	if (is_debug_batt_id(chip) || chip->battery_missing) {
 		*charge_counter = -EINVAL;
 		return 0;
@@ -1846,7 +1951,7 @@ static int qg_get_power(struct qpnp_qg *chip, int *val, bool average)
 	esr = chip->esr_last * 1000;
 
 	if (rbatt <= 0 || esr <= 0) {
-		pr_debug("Invalid rbatt/esr rbatt=%d esr=%d\n", rbatt, esr);
+		pr_err("Invalid rbatt/esr rbatt=%d esr=%d\n", rbatt, esr);
 		*val = -EINVAL;
 		return 0;
 	}
@@ -2086,20 +2191,32 @@ static int qg_setprop_batt_age_level(struct qpnp_qg *chip, int batt_age_level)
 }
 
 static int qg_psy_set_property(struct power_supply *psy,
-			       enum power_supply_property psp,
-			       const union power_supply_propval *pval)
+				   enum power_supply_property psp,
+				   const union power_supply_propval *pval)
 {
 	struct qpnp_qg *chip = power_supply_get_drvdata(psy);
 	int rc = 0;
 
 	switch (psp) {
+#ifndef OEM_TARGET_PRODUCT_EBBA
+/* @bsp, 2019/07/05 Battery & Charging porting */
+	case POWER_SUPPLY_PROP_CC_TO_CV_POINT:
+		oem_update_cc_cv_setpoint(chip, pval->intval);
+		break;
+	case POWER_SUPPLY_PROP_SET_ALLOW_READ_EXTERN_FG_IIC:
+		oneplus_set_allow_read_iic(chip, pval->intval);
+		break;
+	case POWER_SUPPLY_PROP_UPDATE_LCD_IS_OFF:
+		oneplus_set_lcd_off_status(chip, pval->intval);
+		break;
+#endif
 	case POWER_SUPPLY_PROP_CHARGE_FULL:
 		if (chip->dt.cl_disable) {
-			pr_warn("Capacity learning disabled!\n");
+			pr_err("Capacity learning disabled!\n");
 			return 0;
 		}
 		if (chip->cl->active) {
-			pr_warn("Capacity learning active!\n");
+			pr_err("Capacity learning active!\n");
 			return 0;
 		}
 		if (pval->intval <= 0 || pval->intval > chip->cl->nom_cap_uah) {
@@ -2137,19 +2254,38 @@ static int qg_psy_set_property(struct power_supply *psy,
 	return 0;
 }
 
+#ifdef OEM_TARGET_PRODUCT_EBBA
+static int oplus_qg_get_batt_remaining_capacity(void);
+#else
+#define  DEFALUT_BATT_TEMP 250
+#endif
 static int qg_psy_get_property(struct power_supply *psy,
-			       enum power_supply_property psp,
-			       union power_supply_propval *pval)
+				   enum power_supply_property psp,
+				   union power_supply_propval *pval)
 {
 	struct qpnp_qg *chip = power_supply_get_drvdata(psy);
 	int rc = 0;
 	int64_t temp = 0;
+#ifndef OEM_TARGET_PRODUCT_EBBA
+	int val = 0;
+#endif
 
 	pval->intval = 0;
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_CAPACITY:
+#ifndef OEM_TARGET_PRODUCT_EBBA
+		/* @bsp, 2019/07/05 Battery & Charging porting */
+		if (!get_extern_fg_regist_done())
+			pval->intval = get_prop_pre_shutdown_soc();
+		else if (chip->use_external_fg && external_fg
+				&& external_fg->get_battery_soc)
+			pval->intval = external_fg->get_battery_soc();
+		else
+			pval->intval = 50;
+#else
 		rc = qg_get_battery_capacity(chip, &pval->intval);
+#endif
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY_RAW:
 		pval->intval = chip->sys_soc;
@@ -2157,18 +2293,98 @@ static int qg_psy_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_REAL_CAPACITY:
 		rc = qg_get_battery_capacity_real(chip, &pval->intval);
 		break;
+#ifndef OEM_TARGET_PRODUCT_EBBA
+	case POWER_SUPPLY_PROP_CAPACITY_LEVEL:
+		if (get_extern_fg_regist_done() && chip->use_external_fg && external_fg
+					&& external_fg->get_battery_soc) {
+			val = external_fg->get_battery_soc();
+			if (val < 0)
+				pval->intval = POWER_SUPPLY_CAPACITY_LEVEL_UNKNOWN;
+			else if (val == 0)
+				pval->intval = POWER_SUPPLY_CAPACITY_LEVEL_CRITICAL;
+			else if (val <= 15)
+				pval->intval = POWER_SUPPLY_CAPACITY_LEVEL_LOW;
+			else if (val <= 85)
+				pval->intval = POWER_SUPPLY_CAPACITY_LEVEL_NORMAL;
+			else if (val < 100)
+				pval->intval = POWER_SUPPLY_CAPACITY_LEVEL_HIGH;
+			else if (val == 100)
+				pval->intval = POWER_SUPPLY_CAPACITY_LEVEL_FULL;
+		} else
+			pval->intval = POWER_SUPPLY_CAPACITY_LEVEL_NORMAL;
+		break;
+#endif
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+#ifndef OEM_TARGET_PRODUCT_EBBA
+		 /* @bsp, 2019/07/05 Battery & Charging porting */
+		if (chip->use_external_fg && external_fg
+				&& external_fg->get_battery_mvolts)
+			pval->intval = external_fg->get_battery_mvolts();
+		else
+			pval->intval = 4000000;
+#else
 		rc = qg_get_battery_voltage(chip, &pval->intval);
+#endif
 		break;
 	case POWER_SUPPLY_PROP_CURRENT_NOW:
+#ifndef OEM_TARGET_PRODUCT_EBBA
+		/* @bsp, 2019/07/05 Battery & Charging porting */
+		if (chip->use_external_fg && external_fg
+				&& external_fg->get_average_current)
+			pval->intval = external_fg->get_average_current();
+		else
+			pval->intval = 0;
+#else
 		rc = qg_get_battery_current(chip, &pval->intval);
+#endif
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_OCV:
 		rc = qg_sdam_read(SDAM_OCV_UV, &pval->intval);
 		break;
 	case POWER_SUPPLY_PROP_TEMP:
+#ifndef OEM_TARGET_PRODUCT_EBBA
+		if (!get_extern_fg_regist_done()
+				&& get_extern_bq_present())
+			pval->intval = DEFALUT_BATT_TEMP;
+		else if ((chip->use_external_fg && external_fg)
+				&& external_fg->get_battery_temperature) {
+			pval->intval = external_fg->get_battery_temperature();
+#ifdef OEM_TARGET_PRODUCT_BILLIE
+			/* @BSP modify 1 degree for IEEE 1725 test */
+			if (pval->intval < 50 && pval->intval > 10)
+				pval->intval = pval->intval - (50 - pval->intval) * 10 / 40;
+			else if (pval->intval <= 10)
+				pval->intval = pval->intval - 10;
+#endif
+		} else
+			pval->intval = 250;
+#else
 		rc = qg_get_battery_temp(chip, &pval->intval);
+#endif
 		break;
+
+#ifndef OEM_TARGET_PRODUCT_EBBA
+  /* @bsp, 2019/07/05 Battery & Charging porting */
+	case POWER_SUPPLY_PROP_FG_CAPACITY:
+		rc = qg_get_battery_capacity(chip, &pval->intval);
+		break;
+	case POWER_SUPPLY_PROP_FG_VOLTAGE_NOW:
+		if (chip->battery_missing)
+			pval->intval = 3700000;
+		else
+			rc = qg_get_battery_voltage(chip, &pval->intval);
+		break;
+	case POWER_SUPPLY_PROP_FG_CURRENT_NOW:
+			rc = qg_get_battery_current(chip, &pval->intval);
+		break;
+	case POWER_SUPPLY_PROP_BQ_SOC:
+		if (chip->use_external_fg && external_fg
+				&& external_fg->get_batt_bq_soc)
+			pval->intval = external_fg->get_batt_bq_soc();
+		else
+			pval->intval = 50;
+		break;
+#endif
 	case POWER_SUPPLY_PROP_RESISTANCE_ID:
 		pval->intval = chip->batt_id_ohm;
 		break;
@@ -2196,16 +2412,44 @@ static int qg_psy_get_property(struct power_supply *psy,
 		pval->intval = chip->dt.vbatt_cutoff_mv * 1000;
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_MAX:
+#ifdef OPLUS_FEATURE_CHG_BASIC
+/*zhouhaikang@BSP.CHG.Basic,2020/10/31,add for chg*/
+		if (oplus_warp_get_fastchg_ing())
+			chip->bp.float_volt_uv = 4425000;
+		else if (0 == oplus_chg_get_ffc_status())
+			chip->bp.float_volt_uv = 4430000;
+		/*pr_err("kilody: float_volt_uv=%d\n",  chip->bp.float_volt_uv);*/
+#endif
 		pval->intval = chip->bp.float_volt_uv;
 		break;
 	case POWER_SUPPLY_PROP_BATT_FULL_CURRENT:
+#ifdef OPLUS_FEATURE_CHG_BASIC
+/*zhouhaikang@BSP.CHG.Basic,2020/10/31,add for chg*/
+		if (oplus_chg_get_ffc_status() || oplus_warp_get_fastchg_ing())
+			chip->dt.iterm_ma = 400;
+		else
+			chip->dt.iterm_ma = 250;
+		/*pr_err("kilody: iterm_ma=%d\n", chip->dt.iterm_ma);*/
+#endif
 		pval->intval = chip->dt.iterm_ma * 1000;
 		break;
 	case POWER_SUPPLY_PROP_BATT_PROFILE_VERSION:
 		pval->intval = chip->bp.qg_profile_version;
 		break;
+	/* @BSP get remain capacity from bq */
 	case POWER_SUPPLY_PROP_CHARGE_COUNTER:
+#ifdef OEM_TARGET_PRODUCT_BILLIE
+		if (!get_extern_fg_regist_done() && get_extern_bq_present())
+			rc = qg_get_charge_counter(chip, &pval->intval);
+		else if (chip->use_external_fg && external_fg
+				&& external_fg->get_batt_remaining_capacity)
+			pval->intval =
+				external_fg->get_batt_remaining_capacity() * 1000;
+		else
+			pval->intval = -EINVAL;
+#else
 		rc = qg_get_charge_counter(chip, &pval->intval);
+#endif
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_FULL:
 		if (!chip->dt.cl_disable && chip->dt.cl_feedback_on)
@@ -2269,11 +2513,22 @@ static int qg_psy_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_BATT_AGE_LEVEL:
 		pval->intval = chip->batt_age_level;
 		break;
-	case POWER_SUPPLY_PROP_FG_TYPE:
-		pval->intval = chip->qg_mode;
+	case POWER_SUPPLY_PROP_REMAINING_CAPACITY:
+#ifdef OEM_TARGET_PRODUCT_EBBA
+		pval->intval = oplus_qg_get_batt_remaining_capacity();
+#else
+                if (!get_extern_fg_regist_done() && get_extern_bq_present())
+                        pval->intval = DEFALUT_BATT_TEMP;
+                else if (chip->use_external_fg && external_fg
+                                && external_fg->get_batt_remaining_capacity)
+                        pval->intval =
+                                external_fg->get_batt_remaining_capacity();
+                else
+                        pval->intval = -EINVAL;
+#endif
 		break;
 	default:
-		pr_debug("Unsupported property %d\n", psp);
+		pr_err("Unsupported property %d\n", psp);
 		break;
 	}
 
@@ -2290,6 +2545,9 @@ static int qg_property_is_writeable(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_SOH:
 	case POWER_SUPPLY_PROP_FG_RESET:
 	case POWER_SUPPLY_PROP_BATT_AGE_LEVEL:
+#ifndef OEM_TARGET_PRODUCT_EBBA
+	case POWER_SUPPLY_PROP_SET_ALLOW_READ_EXTERN_FG_IIC:
+#endif
 		return 1;
 	default:
 		break;
@@ -2301,6 +2559,7 @@ static enum power_supply_property qg_psy_props[] = {
 	POWER_SUPPLY_PROP_CAPACITY,
 	POWER_SUPPLY_PROP_CAPACITY_RAW,
 	POWER_SUPPLY_PROP_REAL_CAPACITY,
+	POWER_SUPPLY_PROP_CAPACITY_LEVEL,
 	POWER_SUPPLY_PROP_TEMP,
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 	POWER_SUPPLY_PROP_VOLTAGE_OCV,
@@ -2335,7 +2594,11 @@ static enum power_supply_property qg_psy_props[] = {
 	POWER_SUPPLY_PROP_POWER_NOW,
 	POWER_SUPPLY_PROP_SCALE_MODE_EN,
 	POWER_SUPPLY_PROP_BATT_AGE_LEVEL,
-	POWER_SUPPLY_PROP_FG_TYPE,
+#ifndef OEM_TARGET_PRODUCT_EBBA
+	POWER_SUPPLY_PROP_SET_ALLOW_READ_EXTERN_FG_IIC,
+	POWER_SUPPLY_PROP_BQ_SOC,
+#endif
+	POWER_SUPPLY_PROP_REMAINING_CAPACITY,
 };
 
 static const struct power_supply_desc qg_psy_desc = {
@@ -2379,7 +2642,7 @@ static int qg_charge_full_update(struct qpnp_qg *chip)
 	rc = power_supply_get_property(chip->batt_psy,
 			POWER_SUPPLY_PROP_RECHARGE_SOC, &prop);
 	if (rc < 0 || prop.intval < 0) {
-		pr_debug("Failed to get recharge-soc\n");
+		pr_err("Failed to get recharge-soc\n");
 		recharge_soc = DEFAULT_RECHARGE_SOC;
 	} else {
 		recharge_soc = prop.intval;
@@ -2466,7 +2729,7 @@ static int qg_parallel_status_update(struct qpnp_qg *chip)
 	mutex_lock(&chip->data_lock);
 	/*
 	 * dt.qg_ext_sense = Uses external rsense, if defined do not
-	 *		     enable SMB sensing (for non-CP parallel charger).
+	 *			 enable SMB sensing (for non-CP parallel charger).
 	 * dt.cp_iin_sns = Uses CP IIN_SNS, enable SMB sensing (for CP charger).
 	 */
 	if (is_cp_available(chip))
@@ -2584,6 +2847,14 @@ static int qg_battery_status_update(struct qpnp_qg *chip)
 		pr_err("Failed to get battery-present, rc=%d\n", rc);
 		goto done;
 	}
+
+
+
+
+
+
+
+
 
 	if (chip->battery_missing && prop.intval) {
 		pr_warn("Battery inserted!\n");
@@ -2982,6 +3253,75 @@ static int get_batt_id_ohm(struct qpnp_qg *chip, u32 *batt_id_ohm)
 	return 0;
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 static int qg_load_battery_profile(struct qpnp_qg *chip)
 {
 	struct device_node *node = chip->dev->of_node;
@@ -3030,6 +3370,10 @@ static int qg_load_battery_profile(struct qpnp_qg *chip)
 		pr_err("Failed to detect battery type rc:%d\n", rc);
 		return rc;
 	}
+
+#ifdef OEM_TARGET_PRODUCT_EBBA
+	hardwareinfo_set_prop(HARDWARE_BATTERY_ID, chip->bp.batt_type_str);
+#endif
 
 	rc = qg_batterydata_init(profile_node);
 	if (rc < 0) {
@@ -3116,12 +3460,19 @@ static int qg_load_battery_profile(struct qpnp_qg *chip)
 
 		if (chip->ttf->step_chg_cfg_valid) {
 			for (i = 0; i < tuple_len; i++)
-				pr_debug("Vbatt_low: %d Vbatt_high: %d FCC: %d\n",
+				pr_err("Vbatt_low: %d Vbatt_high: %d FCC: %d\n",
 				chip->ttf->step_chg_cfg[i].low_threshold,
 				chip->ttf->step_chg_cfg[i].high_threshold,
 				chip->ttf->step_chg_cfg[i].value);
 		}
 	}
+
+	/* @bsp, CHG bringup:DISABLE_TEMP_PROTECT start */
+	#ifdef CONFIG_DISABLE_TEMP_PROTECT
+			chip->bp.float_volt_uv = 4100000;
+			chip->bp.fastchg_curr_ma = 1500;
+	#endif
+	/* @bsp, CHG bringup:DISABLE_TEMP_PROTECT end */
 
 	qg_dbg(chip, QG_DEBUG_PROFILE, "profile=%s FV=%duV FCC=%dma\n",
 			chip->bp.batt_type_str, chip->bp.float_volt_uv,
@@ -3224,7 +3575,7 @@ static int qg_determine_pon_soc(struct qpnp_qg *chip)
 		goto done;
 	}
 
-	qg_dbg(chip, QG_DEBUG_PON, "Shutdown: Valid=%d SOC=%d OCV=%duV time=%dsecs temp=%d, time_now=%ldsecs temp_now=%d S7_soc=%d\n",
+	pr_err("Shutdown: Valid=%d SOC=%d OCV=%duV time=%dsecs temp=%d, time_now=%ldsecs temp_now=%d S7_soc=%d\n",
 			shutdown[SDAM_VALID],
 			shutdown[SDAM_SOC],
 			shutdown[SDAM_OCV_UV],
@@ -3232,6 +3583,8 @@ static int qg_determine_pon_soc(struct qpnp_qg *chip)
 			shutdown_temp,
 			rtc_sec, batt_temp,
 			pon_soc);
+	pr_err("ignore_shutdown_secs = %d, ignore_temp_diff = %d\n",
+			chip->dt.ignore_shutdown_soc_secs, chip->dt.shutdown_temp_diff);
 	/*
 	 * Use the shutdown SOC if
 	 * 1. SDAM read is a success & SDAM data is valid
@@ -3387,7 +3740,12 @@ static int qg_set_wa_flags(struct qpnp_qg *chip)
 		qg_esr_mod_count = 10;
 		break;
 	case PM7250B_SUBTYPE:
+#ifdef OPLUS_FEATURE_CHG_BASIC
+/*zhouhaikang@BSP.CHG.Basic,2020/10/31,add for chg*/
+		qg_esr_mod_count = 5;
+#else
 		qg_esr_mod_count = 10;
+#endif
 		break;
 	case PM2250_SUBTYPE:
 		chip->wa_flags |= QG_CLK_ADJUST_WA |
@@ -3804,7 +4162,7 @@ static int qg_request_irqs(struct qpnp_qg *chip)
 
 	for_each_available_child_of_node(node, child) {
 		of_property_for_each_string(child, "interrupt-names",
-					    prop, name) {
+						prop, name) {
 			rc = qg_request_interrupt(chip, child, name);
 			if (rc < 0)
 				return rc;
@@ -4397,9 +4755,12 @@ static int qg_parse_dt(struct qpnp_qg *chip)
 	}
 
 	if (of_property_read_bool(node, "qcom,tcss-enable")) {
-
+#ifdef OPLUS_FEATURE_CHG_BASIC
+/*zhouhaikang@BSP.CHG.Basic,2020/10/31,add for chg*/
+		chip->dt.tcss_enable = false;
+#else
 		chip->dt.tcss_enable = true;
-
+#endif
 		rc = of_property_read_u32(node,
 				"qcom,tcss-entry-soc", &temp);
 		if (rc < 0)
@@ -4665,6 +5026,34 @@ static const struct dev_pm_ops qpnp_qg_pm_ops = {
 	.resume		= qpnp_qg_resume,
 };
 
+/* @bsp, 2019/07/05 Battery & Charging porting */
+static void oem_update_cc_cv_setpoint(
+                               struct qpnp_qg *chip, int cv_float_point)
+{
+       /* TODO: write CC_CV_SETPOINT_REG */
+}
+
+static void oneplus_set_allow_read_iic(struct qpnp_qg *chip,
+                               bool status)
+{
+       if (chip->use_external_fg && external_fg
+                       && external_fg->set_allow_reading)
+               external_fg->set_allow_reading(status);
+       else
+               pr_info("set allow read extern fg iic fail\n");
+}
+
+static void oneplus_set_lcd_off_status(struct qpnp_qg *chip,
+                               bool status)
+{
+       if (chip->use_external_fg && external_fg
+                       && external_fg->set_lcd_off_status)
+               external_fg->set_lcd_off_status(status);
+       else
+               pr_info("set lcd off status fail\n");
+}
+
+
 static int qpnp_qg_probe(struct platform_device *pdev)
 {
 	int rc = 0, soc = 0, nom_cap_uah;
@@ -4680,6 +5069,9 @@ static int qpnp_qg_probe(struct platform_device *pdev)
 		return -ENXIO;
 	}
 
+#ifndef OEM_TARGET_PRODUCT_EBBA
+	chip->use_external_fg = true;
+#endif
 	/* ADC for BID & THERM */
 	chip->batt_id_chan = iio_channel_get(&pdev->dev, "batt-id");
 	if (IS_ERR(chip->batt_id_chan)) {
@@ -4863,6 +5255,24 @@ static int qpnp_qg_probe(struct platform_device *pdev)
 		goto fail_votable;
 	}
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 	rc = sysfs_create_groups(&chip->dev->kobj, qg_groups);
 	if (rc < 0) {
 		pr_err("Failed to create sysfs files rc=%d\n", rc);
@@ -4871,11 +5281,23 @@ static int qpnp_qg_probe(struct platform_device *pdev)
 
 	qg_get_battery_capacity(chip, &soc);
 
+#ifdef OEM_TARGET_PRODUCT_EBBA
+	hardwareinfo_set_prop(HARDWARE_BMS_GAUGE, QCOMM_PMIC_TYPE);
+	hardwareinfo_set_prop(HARDWARE_CHARGER_IC, QCOMM_PMIC_TYPE);
+#endif
+
 	pr_info("QG initialized! battery_profile=%s SOC=%d QG_subtype=%d QG_version=%s QG_mode=%s\n",
 			qg_get_battery_type(chip), soc, chip->qg_subtype,
 			(chip->qg_version == QG_LITE) ? "QG_LITE" : "QG_PMIC5",
 			(chip->qg_mode == QG_V_I_MODE) ? "QG_V_I" : "QG_V");
 
+#ifdef OEM_TARGET_PRODUCT_BILLIE
+	//Bug 550748 xujianbang.wt,Modifiy,20200514,shows battery/bms/chg hardwareinfo
+	hardwareinfo_set_prop(HARDWARE_BMS_GAUGE, BMS_GAUGE_TYPE);
+
+	pr_info("QG initialized! battery_profile=%s SOC=%d QG_subtype=%d\n",
+			qg_get_battery_type(chip), soc, chip->qg_subtype);
+#endif
 	return rc;
 
 fail_votable:

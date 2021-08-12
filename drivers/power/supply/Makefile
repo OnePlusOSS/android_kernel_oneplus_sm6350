@@ -1,8 +1,17 @@
 # SPDX-License-Identifier: GPL-2.0
 subdir-ccflags-$(CONFIG_POWER_SUPPLY_DEBUG) := -DDEBUG
 
+ifneq ($(filter ebba%, $(OEM_TARGET_PRODUCT)),)
+
+ccflags-y += -DOPLUS_FEATURE_CHG_BASIC
+endif
+
 power_supply-y				:= power_supply_core.o
+ifneq ($(filter ebba%, $(OEM_TARGET_PRODUCT)),)
+power_supply-$(CONFIG_SYSFS)		+= oplus_power_supply_sysfs.o
+else
 power_supply-$(CONFIG_SYSFS)		+= power_supply_sysfs.o
+endif
 power_supply-$(CONFIG_LEDS_TRIGGERS)	+= power_supply_leds.o
 
 obj-$(CONFIG_POWER_SUPPLY)	+= power_supply.o

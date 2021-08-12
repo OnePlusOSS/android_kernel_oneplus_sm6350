@@ -7,8 +7,13 @@
 #ifndef QPNP_PON_H
 #define QPNP_PON_H
 
+#ifdef OEM_TARGET_PRODUCT_BILLIE
+#define CONFIG_OPLUS_FEATURE_QCOM_PMICWD
+#endif
+
 #include <dt-bindings/input/qcom,qpnp-power-on.h>
 #include <linux/errno.h>
+#include <linux/kthread.h>
 
 /**
  * enum pon_trigger_source: List of PON trigger sources
@@ -46,6 +51,73 @@ enum pon_power_off_type {
 	PON_POWER_OFF_MAX_TYPE		= 0x10,
 };
 
+#ifdef CONFIG_OPLUS_FEATURE_QCOM_PMICWD
+/* @bsp, 20190705 Battery & Charging porting */
+struct qpnp_pon {
+	struct device		*dev;
+	struct regmap		*regmap;
+	struct input_dev	*pon_input;
+	struct qpnp_pon_config	*pon_cfg;
+	struct pon_regulator	*pon_reg_cfg;
+	struct list_head	list;
+	struct delayed_work	bark_work;
+	/*add blackscreen detect mechanism--start*/
+	struct kthread_worker	*kworker;
+	struct kthread_delayed_work press_work;
+	/*add blackscreen detect mechanism--end*/
+#ifdef CONFIG_KEY_FLUSH
+	struct delayed_work     press_work_flush;
+#endif
+	struct work_struct  up_work;
+	atomic_t	   press_count;
+	struct dentry		*debugfs;
+	/*add pmic watchdog mechanism--start*/
+	struct task_struct	*wd_task;
+	struct mutex		wd_task_mutex;
+	unsigned int		pmicwd_state;//|reserver|rst type|timeout|enable|
+	u8			suspend_state;//record the suspend state
+	/*add pmic watchdog mechanism--end*/
+	struct device_node      *pbs_dev_node;
+	int			pon_trigger_reason;
+	int			pon_power_off_reason;
+	int			num_pon_reg;
+	int			num_pon_config;
+	u32			dbc_time_us;
+	u32			uvlo;
+	int			warm_reset_poff_type;
+	int			hard_reset_poff_type;
+	int			shutdown_poff_type;
+	int			resin_warm_reset_type;
+	int			resin_hard_reset_type;
+	int			resin_shutdown_type;
+	u16			base;
+	u8			subtype;
+	u8			pon_ver;
+	u8			warm_reset_reason1;
+	u8			warm_reset_reason2;
+	u8                      twm_state;
+	bool			is_spon;
+	bool			store_hard_reset_reason;
+	bool			resin_hard_reset_disable;
+	bool			resin_shutdown_disable;
+	bool			ps_hold_hard_reset_disable;
+	bool			ps_hold_shutdown_disable;
+	bool			kpdpwr_dbc_enable;
+	bool                    support_twm_config;
+	bool			resin_pon_reset;
+	ktime_t			kpdpwr_last_release_time;
+	struct notifier_block   pon_nb;
+	bool			legacy_hard_reset_offset;
+};
+
+extern const struct dev_pm_ops qpnp_pm_ops;
+extern struct qpnp_pon *sys_reset_dev;
+int qpnp_pon_masked_write(struct qpnp_pon *pon, u16 addr, u8 mask, u8 val);
+void pmicwd_init(struct platform_device *pdev, struct qpnp_pon *pon, bool sys_reset);
+void kpdpwr_init(struct qpnp_pon *pon,  bool sys_reset);
+#endif
+
+
 enum pon_restart_reason {
 	PON_RESTART_REASON_UNKNOWN		= 0x00,
 	PON_RESTART_REASON_RECOVERY		= 0x01,
@@ -54,7 +126,22 @@ enum pon_restart_reason {
 	PON_RESTART_REASON_DMVERITY_CORRUPTED	= 0x04,
 	PON_RESTART_REASON_DMVERITY_ENFORCE	= 0x05,
 	PON_RESTART_REASON_KEYS_CLEAR		= 0x06,
+	PON_RESTART_REASON_FACTORY		= 0x21,
+	PON_RESTART_REASON_RF			= 0x22,
+	PON_RESTART_BOOTLOADER_RECOVERY = 0X23,
+	PON_RESTART_REASON_SBL_DDRTEST	= 0x24,
+	PON_RESTART_REASON_SBL_DDR_CUS	= 0x25,
+	PON_RESTART_REASON_MEM_AGING	= 0x26,
 };
+
+/* Define OEM reboot mode magic*/
+#define AGING_MODE      0x77665510
+#define FACTORY_MODE    0x77665504
+#define RF_MODE         0x77665506
+#define KERNEL_MODE     0x7766550d
+#define ANDROID_MODE    0x7766550c
+#define MODEM_MODE      0x7766550b
+#define OEM_PANIC       0x77665518
 
 #ifdef CONFIG_INPUT_QPNP_POWER_ON
 int qpnp_pon_system_pwr_off(enum pon_power_off_type type);
@@ -64,6 +151,12 @@ int qpnp_pon_wd_config(bool enable);
 int qpnp_pon_set_restart_reason(enum pon_restart_reason reason);
 bool qpnp_pon_check_hard_reset_stored(void);
 int qpnp_pon_modem_pwr_off(enum pon_power_off_type type);
+
+#ifdef CONFIG_KEY_FLUSH
+extern int panic_flush_device_cache(int timeout);
+extern void panic_flush_device_cache_circled_on(void);
+extern void panic_flush_device_cache_circled_off(void);
+#endif
 
 #else
 

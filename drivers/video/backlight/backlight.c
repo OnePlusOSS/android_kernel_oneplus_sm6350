@@ -170,6 +170,7 @@ static ssize_t brightness_show(struct device *dev,
 	return sprintf(buf, "%d\n", bd->props.brightness);
 }
 
+extern int saved_backlight;
 int backlight_device_set_brightness(struct backlight_device *bd,
 				    unsigned long brightness)
 {
@@ -180,6 +181,7 @@ int backlight_device_set_brightness(struct backlight_device *bd,
 		if (brightness > bd->props.max_brightness)
 			rc = -EINVAL;
 		else {
+			saved_backlight = brightness;
 			pr_debug("set brightness to %lu\n", brightness);
 			bd->props.brightness = brightness;
 			rc = backlight_update_status(bd);

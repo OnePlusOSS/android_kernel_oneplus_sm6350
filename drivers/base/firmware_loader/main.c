@@ -283,6 +283,10 @@ static void free_fw_priv(struct fw_priv *fw_priv)
 static char fw_path_para[256];
 static const char * const fw_path[] = {
 	fw_path_para,
+	#ifdef CONFIG_SND_SOC_EBBA_AUDIO_KERNEL
+	"/vendor/firmware/" UTS_RELEASE,
+	"/vendor/firmware",
+	#endif
 	"/lib/firmware/updates/" UTS_RELEASE,
 	"/lib/firmware/updates",
 	"/lib/firmware/" UTS_RELEASE,
@@ -328,6 +332,13 @@ fw_get_filesystem_firmware(struct device *device, struct fw_priv *fw_priv)
 			rc = -ENAMETOOLONG;
 			break;
 		}
+
+		// CONFIG_PXLW_IRIS
+		// Force to use "/data/vendor/display" path for Iris5 calibrated fw.
+		if (!strcmp(fw_priv->fw_name, "iris5_ccf1b.fw") ||
+				!strcmp(fw_priv->fw_name, "iris5_ccf2b.fw"))
+			snprintf(path, PATH_MAX, "%s/%s", "/data/vendor/display", fw_priv->fw_name);
+		// CONFIG_PXLW_IRIS
 
 		fw_priv->size = 0;
 		rc = kernel_read_file_from_path(path, &fw_priv->data, &size,

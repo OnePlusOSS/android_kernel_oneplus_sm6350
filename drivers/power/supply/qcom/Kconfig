@@ -145,4 +145,14 @@ config SMB1398_CHARGER
 	      wireless charger receiver and provide the input for downstream
 	      chargers.
 
+# XJB@bsp 2020/06/03 CHG bringup:DISABLE_TEMP_PROTECT
+config DISABLE_TEMP_PROTECT
+	bool "OEM control TEMP protect"
+	depends on MFD_SPMI_PMIC
+	default n
+	help
+	  Say Y here to enable a function which disabled TEMP protect. It is just for
+	  some special debug version using.
+	  WARNNING:Only SCM could open it.
+	  If unsure,say N.
 endmenu

@@ -571,8 +571,15 @@ static void msm_gpio_dbg_show(struct seq_file *s, struct gpio_chip *chip)
 	unsigned gpio = chip->base;
 	unsigned i;
 
-	for (i = 0; i < chip->ngpio; i++, gpio++)
+	seq_puts(s, " name    dir  val fun   drv pull \n");
+
+	for (i = 0; i < chip->ngpio; i++, gpio++) {
+
+		if (i == 28 || i == 29 || i == 30 || i == 31 ||
+			i == 40 || i == 41 || i == 42 || i == 43  )
+			continue;
 		msm_gpio_dbg_show_one(s, NULL, chip, i, gpio);
+	}
 }
 
 #else
@@ -1620,6 +1627,49 @@ int msm_pinctrl_probe(struct platform_device *pdev,
 
 	register_syscore_ops(&msm_pinctrl_pm_ops);
 	dev_dbg(&pdev->dev, "Probed Qualcomm pinctrl driver\n");
+#ifdef OEM_TARGET_PRODUCT_EBBA
+	pr_err("Disable GPIO10 to GPIO149  wakeup\n");
+	msm_gpio_mpm_wake_set(10, false);
+	msm_gpio_mpm_wake_set(27, false);
+	msm_gpio_mpm_wake_set(28, false);
+	msm_gpio_mpm_wake_set(33, false);
+	msm_gpio_mpm_wake_set(36, false);
+	msm_gpio_mpm_wake_set(47, false);
+	msm_gpio_mpm_wake_set(50, false);
+	msm_gpio_mpm_wake_set(51, false);
+	msm_gpio_mpm_wake_set(54, false);
+	msm_gpio_mpm_wake_set(55, false);
+	msm_gpio_mpm_wake_set(57, false);
+	msm_gpio_mpm_wake_set(70, false);
+	msm_gpio_mpm_wake_set(71, false);
+	msm_gpio_mpm_wake_set(84, false);
+	msm_gpio_mpm_wake_set(85, false);
+	msm_gpio_mpm_wake_set(86, false);
+	msm_gpio_mpm_wake_set(89, false);
+	msm_gpio_mpm_wake_set(93, false);
+	msm_gpio_mpm_wake_set(94, false);
+	msm_gpio_mpm_wake_set(96, false);
+	msm_gpio_mpm_wake_set(97, false);
+	msm_gpio_mpm_wake_set(99, false);
+	msm_gpio_mpm_wake_set(106, false);
+	msm_gpio_mpm_wake_set(107, false);
+	msm_gpio_mpm_wake_set(108, false);
+	msm_gpio_mpm_wake_set(113, false);
+	msm_gpio_mpm_wake_set(115, false);
+	msm_gpio_mpm_wake_set(116, false);
+	msm_gpio_mpm_wake_set(120, false);
+	msm_gpio_mpm_wake_set(122, false);
+	msm_gpio_mpm_wake_set(123, false);
+	msm_gpio_mpm_wake_set(133, false);
+	msm_gpio_mpm_wake_set(135, false);
+	msm_gpio_mpm_wake_set(137, false);
+	msm_gpio_mpm_wake_set(138, false);
+	msm_gpio_mpm_wake_set(139, false);
+	msm_gpio_mpm_wake_set(140, false);
+	msm_gpio_mpm_wake_set(141, false);
+	msm_gpio_mpm_wake_set(148, false);
+	msm_gpio_mpm_wake_set(149, false);
+#endif
 
 	return 0;
 }

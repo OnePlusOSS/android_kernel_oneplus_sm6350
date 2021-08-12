@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2002,2007-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2002,2007-2021, The Linux Foundation. All rights reserved.
  */
 #include <linux/delay.h>
 #include <linux/input.h>
@@ -1703,37 +1703,14 @@ static void adreno_fault_detect_init(struct adreno_device *adreno_dev)
 }
 
 static void do_gbif_halt(struct adreno_device *adreno_dev,
-	u32 halt_reg, u32 ack_reg, u32 mask, const char *client)
+	u32 halt_reg, u32 ack_reg, u32 mask)
 {
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
-	unsigned long t;
-	u32 val;
 
 	adreno_writereg(adreno_dev, halt_reg, mask);
+	adreno_wait_for_halt_ack(device, ack_reg, mask);
 
-	t = jiffies + msecs_to_jiffies(VBIF_RESET_ACK_TIMEOUT);
-	do {
-		adreno_readreg(adreno_dev, ack_reg, &val);
-		if ((val & mask) == mask)
-			return;
-
-		/*
-		 * If we are attempting GBIF halt in case of stall-on-fault
-		 * then the halt sequence will not complete as long as SMMU
-		 * is stalled.
-		 */
-		kgsl_mmu_pagefault_resume(&device->mmu);
-		usleep_range(10, 100);
-	} while (!time_after(jiffies, t));
-
-	/* Check one last time */
-	kgsl_mmu_pagefault_resume(&device->mmu);
-
-	adreno_readreg(adreno_dev, ack_reg, &val);
-	if ((val & mask) == mask)
-		return;
-
-	dev_err(device->dev, "%s GBIF Halt ack timed out\n", client);
+	return;
 }
 
 /**
@@ -1749,11 +1726,11 @@ void adreno_smmu_resume(struct adreno_device *adreno_dev)
 	if (gmu_core_dev_gx_is_on(KGSL_DEVICE(adreno_dev)))
 		do_gbif_halt(adreno_dev, ADRENO_REG_RBBM_GBIF_HALT,
 			ADRENO_REG_RBBM_GBIF_HALT_ACK,
-			gpudev->gbif_gx_halt_mask, "GX");
+			gpudev->gbif_gx_halt_mask);
 
 	/* Halt all CX traffic */
 	do_gbif_halt(adreno_dev, ADRENO_REG_GBIF_HALT,
-		ADRENO_REG_GBIF_HALT_ACK, gpudev->gbif_arb_halt_mask, "CX");
+		ADRENO_REG_GBIF_HALT_ACK, gpudev->gbif_arb_halt_mask);
 }
 
 /**

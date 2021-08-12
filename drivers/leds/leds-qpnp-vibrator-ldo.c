@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2017-2019, The Linux Foundation. All rights reserved. */
-
 #define pr_fmt(fmt)	"%s: " fmt, __func__
 
 #include <linux/errno.h>
@@ -24,7 +23,11 @@
 #define QPNP_VIB_LDO_EN			BIT(7)
 
 /* Vibrator-LDO voltage settings */
+#if defined(OEM_TARGET_PRODUCT_EBBA) || defined(OEM_TARGET_PRODUCT_BILLIE)
+#define QPNP_VIB_LDO_VMIN_UV		3001000
+#else
 #define QPNP_VIB_LDO_VMIN_UV		1504000
+#endif
 #define QPNP_VIB_LDO_VMAX_UV		3544000
 #define QPNP_VIB_LDO_VOLT_STEP_UV	8000
 
@@ -323,6 +326,12 @@ static ssize_t qpnp_vib_store_activate(struct device *dev,
 	if (val != 0 && val != 1)
 		return count;
 
+#if (defined(OEM_TARGET_PRODUCT_EBBA) || defined(OEM_TARGET_PRODUCT_BILLIE))
+	if ((val == 0) && (chip->vib_play_ms <= QPNP_VIB_MIN_PLAY_MS)) {
+		return count;
+	}
+#endif
+
 	mutex_lock(&chip->lock);
 	hrtimer_cancel(&chip->stop_timer);
 	chip->state = val;
@@ -361,10 +370,20 @@ static ssize_t qpnp_vib_store_vmax(struct device *dev,
 	data = min(data, QPNP_VIB_LDO_VMAX_UV);
 	data = max(data, QPNP_VIB_LDO_VMIN_UV);
 
+#ifdef OEM_TARGET_PRODUCT_BILLIE
+	/* @BSP setting min_vmax to 3.0V */
+	if (chip->vmax_uV != data)
+		pr_info("VIB vmax_uv set to %d\n", data);
+#endif
+
 	mutex_lock(&chip->lock);
 	chip->vmax_uV = data;
 	mutex_unlock(&chip->lock);
+#if (defined(OEM_TARGET_PRODUCT_EBBA) || defined(OEM_TARGET_PRODUCT_BILLIE))
+	return count;
+#else
 	return ret;
+#endif
 }
 
 static struct device_attribute qpnp_vib_attrs[] = {

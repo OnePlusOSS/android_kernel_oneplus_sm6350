@@ -77,7 +77,9 @@
 /* DEBUG_CTRL4 register bits  */
 #define FORCED_UTMI_DPPULLDOWN	BIT(2)
 #define FORCED_UTMI_DMPULLDOWN	BIT(3)
-
+#if (defined(OEM_TARGET_PRODUCT_EBBA) || defined(OEM_TARGET_PRODUCT_BILLIE))
+static int dpdm_regulator_count = 0;
+#endif
 enum qusb_phy_reg {
 	PORT_TUNE1,
 	PLL_COMMON_STATUS_ONE,
@@ -194,9 +196,18 @@ static int qusb_phy_disable_power(struct qusb_phy *qphy)
 	int ret = 0;
 
 	mutex_lock(&qphy->lock);
-
+#if (defined(OEM_TARGET_PRODUCT_EBBA) || defined(OEM_TARGET_PRODUCT_BILLIE))
+	if (dpdm_regulator_count <= 0) {
+		dpdm_regulator_count = 0;
+		return ret;
+	}
+	dev_dbg(qphy->phy.dev, "%s:req to turn off regulators dpdm_regulator_count = %d\n",
+			__func__, dpdm_regulator_count);
+#else
 	dev_dbg(qphy->phy.dev, "%s:req to turn off regulators\n",
 			__func__);
+#endif
+
 
 	ret = regulator_disable(qphy->refgen);
 	if (ret)
@@ -262,9 +273,13 @@ static int qusb_phy_disable_power(struct qusb_phy *qphy)
 			dev_err(qphy->phy.dev, "Unable unconfig VDD:%d\n",
 						ret);
 	}
-
+#if (defined(OEM_TARGET_PRODUCT_EBBA) || defined(OEM_TARGET_PRODUCT_BILLIE))
+	dpdm_regulator_count--;
+	pr_debug("%s(): QUSB PHY's regulators are turned OFF. dpdm_regulator_count = %d\n",
+				__func__, dpdm_regulator_count);
+#else
 	pr_debug("%s(): QUSB PHY's regulators are turned OFF.\n", __func__);
-
+#endif
 	mutex_unlock(&qphy->lock);
 
 	return ret;
@@ -275,10 +290,14 @@ static int qusb_phy_enable_power(struct qusb_phy *qphy)
 	int ret = 0;
 
 	mutex_lock(&qphy->lock);
-
+#if (defined(OEM_TARGET_PRODUCT_EBBA) || defined(OEM_TARGET_PRODUCT_BILLIE))
+	dpdm_regulator_count++;
+	dev_dbg(qphy->phy.dev, "%s:req to turn on regulators dpdm_regulator_count = %d\n",
+			__func__, dpdm_regulator_count);
+#else
 	dev_dbg(qphy->phy.dev, "%s:req to turn on regulators\n",
 			__func__);
-
+#endif
 	ret = qusb_phy_config_vdd(qphy, true);
 	if (ret) {
 		dev_err(qphy->phy.dev, "Unable to config VDD:%d\n",
@@ -675,9 +694,14 @@ static void qusb_phy_shutdown(struct usb_phy *phy)
 	struct qusb_phy *qphy = container_of(phy, struct qusb_phy, phy);
 
 	dev_dbg(phy->dev, "%s\n", __func__);
-
+#if (defined(OEM_TARGET_PRODUCT_EBBA) || defined(OEM_TARGET_PRODUCT_BILLIE))
+	if (qphy->dpdm_enable) {
+		qusb_phy_disable_power(qphy);
+		qphy->dpdm_enable = false;
+	}
+#else
 	qusb_phy_disable_power(qphy);
-
+#endif
 }
 
 static u32 qusb_phy_get_linestate(struct qusb_phy *qphy)
@@ -879,6 +903,7 @@ static int msm_qusb_phy_drive_dp_pulse(struct usb_phy *phy,
 	msleep(20);
 
 	qusb_phy_enable_clocks(qphy, false);
+
 	ret = qusb_phy_disable_power(qphy);
 	if (ret < 0) {
 		dev_dbg(qphy->phy.dev,
@@ -909,6 +934,7 @@ static int qusb_phy_dpdm_regulator_enable(struct regulator_dev *rdev)
 			return ret;
 		}
 		qphy->dpdm_enable = true;
+
 		qusb_phy_reset(qphy);
 	}
 
@@ -930,6 +956,7 @@ static int qusb_phy_dpdm_regulator_disable(struct regulator_dev *rdev)
 				"dpdm regulator disable failed:%d\n", ret);
 			return ret;
 		}
+
 		qphy->dpdm_enable = false;
 	}
 
@@ -942,7 +969,8 @@ static int qusb_phy_dpdm_regulator_is_enabled(struct regulator_dev *rdev)
 
 	dev_dbg(qphy->phy.dev, "%s qphy->dpdm_enable = %d\n", __func__,
 					qphy->dpdm_enable);
-	return qphy->dpdm_enable;
+
+  	return qphy->dpdm_enable;
 }
 
 static struct regulator_ops qusb_phy_dpdm_regulator_ops = {
@@ -1335,8 +1363,9 @@ static int qusb_phy_probe(struct platform_device *pdev)
 	 * kernel boot till USB phy driver is initialized based on cable status,
 	 * keep LDOs on here.
 	 */
-	if (qphy->eud_enable_reg && readl_relaxed(qphy->eud_enable_reg))
+	if (qphy->eud_enable_reg && readl_relaxed(qphy->eud_enable_reg)) {
 		qusb_phy_enable_power(qphy);
+	}
 
 	return ret;
 }

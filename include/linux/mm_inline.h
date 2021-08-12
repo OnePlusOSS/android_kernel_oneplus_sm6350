@@ -77,6 +77,10 @@ static inline enum lru_list page_lru_base_type(struct page *page)
 {
 	if (page_is_file_cache(page))
 		return LRU_INACTIVE_FILE;
+	/* CONFIG_MEMPLUS add start by bin.zhong@ASTI */
+	if (PageSwapCache(page))
+		return MEMPLUS_PAGE_LRU;
+	/* add end */
 	return LRU_INACTIVE_ANON;
 }
 

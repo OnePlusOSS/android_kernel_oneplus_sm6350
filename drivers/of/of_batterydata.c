@@ -14,6 +14,11 @@
 #include <linux/of_batterydata.h>
 #include <linux/power_supply.h>
 
+#ifdef OEM_TARGET_PRODUCT_BILLIE
+//Bug 550748 xujianbang.wt,Modifiy,20200514,shows battery/bms/chg hardwareinfo
+#include <linux/hardware_info.h>
+#endif
+
 static int of_batterydata_read_lut(const struct device_node *np,
 			int max_cols, int max_rows, int *ncols, int *nrows,
 			int *col_legend_data, int *row_legend_data,
@@ -384,8 +389,13 @@ struct device_node *of_batterydata_get_best_profile(
 
 	rc = of_property_read_string(best_node, "qcom,battery-type",
 							&battery_type);
-	if (!rc)
+	if (!rc) {
 		pr_info("%s found\n", battery_type);
+#ifdef OEM_TARGET_PRODUCT_BILLIE
+		//Bug 550748 xujianbang.wt,Modifiy,20200514,shows battery/bms/chg hardwareinfo
+		hardwareinfo_set_prop(HARDWARE_BATTERY_ID, battery_type);
+#endif
+	}
 	else
 		pr_info("%s found\n", best_node->name);
 

@@ -279,12 +279,14 @@ static int setup_fifo_params(struct spi_device *spi_slv,
 
 		delay_params =
 		(struct spi_geni_qcom_ctrl_data *) spi_slv->controller_data;
+#ifndef OEM_TARGET_PRODUCT_BILLIE
 		cs_clk_delay =
 		(delay_params->spi_cs_clk_delay << SPI_CS_CLK_DELAY_SHFT)
 							& SPI_CS_CLK_DELAY_MSK;
 		inter_words_delay =
 			delay_params->spi_inter_words_delay &
 						SPI_INTER_WORDS_DELAY_MSK;
+#endif
 		spi_delay_params =
 		(inter_words_delay | cs_clk_delay);
 	}
@@ -560,11 +562,12 @@ static int setup_gsi_xfer(struct spi_transfer *xfer,
 	if (spi_slv->controller_data) {
 		delay_params =
 		(struct spi_geni_qcom_ctrl_data *) spi_slv->controller_data;
-
+#ifndef OEM_TARGET_PRODUCT_BILLIE
 		cs_clk_delay =
 			delay_params->spi_cs_clk_delay;
 		inter_words_delay =
 			delay_params->spi_inter_words_delay;
+#endif
 	}
 
 	if ((xfer->bits_per_word != mas->cur_word_len) ||
@@ -1264,13 +1267,13 @@ static int spi_geni_transfer_one(struct spi_master *spi,
 		dev_err(mas->dev, "Invalid xfer both tx rx are NULL\n");
 		return -EINVAL;
 	}
-
+#ifndef OEM_TARGET_PRODUCT_BILLIE
 	/* Check for zero length transfer */
 	if (xfer->len < 1) {
 		dev_err(mas->dev, "Zero length transfer\n");
 		return -EINVAL;
 	}
-
+#endif
 	if (mas->cur_xfer_mode != GSI_DMA) {
 		reinit_completion(&mas->xfer_done);
 		ret = setup_fifo_xfer(xfer, mas, slv->mode, spi);
@@ -1821,6 +1824,9 @@ static int spi_geni_suspend(struct device *dev)
 {
 	int ret = 0;
 
+	struct spi_master *spi = get_spi_master(dev);
+	struct spi_geni_master *geni_mas = spi_master_get_devdata(spi);
+	/*
 	if (!pm_runtime_status_suspended(dev)) {
 		struct spi_master *spi = get_spi_master(dev);
 		struct spi_geni_master *geni_mas = spi_master_get_devdata(spi);
@@ -1841,6 +1847,9 @@ static int spi_geni_suspend(struct device *dev)
 			ret = -EBUSY;
 		}
 	}
+	*/
+	GENI_SE_ERR(geni_mas->ipc, true, dev,
+			"%s: Do nothing", __func__);
 	return ret;
 }
 #else

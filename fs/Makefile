@@ -132,3 +132,14 @@ obj-y				+= exofs/ # Multiple modules
 obj-$(CONFIG_CEPH_FS)		+= ceph/
 obj-$(CONFIG_PSTORE)		+= pstore/
 obj-$(CONFIG_EFIVAR_FS)		+= efivarfs/
+obj-$(CONFIG_EXFAT_FS)		+= exfat/
+# filter instantnoodle, instantnoodlep ...
+ifeq ($(filter instantnoodle% ebba%, $(OEM_TARGET_PRODUCT)),)
+KBUILD_CFLAGS += -DUFS3V1
+else
+ifneq ($(filter ebba%, $(OEM_TARGET_PRODUCT)),)
+KBUILD_CFLAGS += -DUFS2V1
+else
+KBUILD_CFLAGS += -DUFS3V0
+endif
+endif
